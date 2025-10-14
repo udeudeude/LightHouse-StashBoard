@@ -1,0 +1,5 @@
+{
+  "name": "LightHouse",
+  "description": "A digital game board for Looney Labs' Looney Pyramids. Create and manipulate light shapes on a virtual black board to place your physical game pieces on.",
+  "requestFramePermissions": []
+}
