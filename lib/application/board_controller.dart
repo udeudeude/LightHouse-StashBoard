@@ -99,8 +99,10 @@ class BoardController extends ChangeNotifier {
     }
 
     final rotation = -current.headingDegrees * math.pi / 180;
-    final localX = drag.xMm * math.cos(rotation) - drag.yMm * math.sin(rotation);
-    final localY = drag.xMm * math.sin(rotation) + drag.yMm * math.cos(rotation);
+    final localX =
+        drag.xMm * math.cos(rotation) - drag.yMm * math.sin(rotation);
+    final localY =
+        drag.xMm * math.sin(rotation) + drag.yMm * math.cos(rotation);
     if (localY <= 0 || localY <= localX.abs()) return;
 
     final heading = current.headingDegrees * math.pi / 180;

@@ -42,21 +42,24 @@ void main() {
     );
   });
 
-  test('eastward drag tips upright element and reverse hinge drag stands it', () {
-    final controller = BoardController();
-    controller.createAt(const PhysicalPoint(50, 50));
-    final upright = controller.state.elements.single;
+  test(
+    'eastward drag tips upright element and reverse hinge drag stands it',
+    () {
+      final controller = BoardController();
+      controller.createAt(const PhysicalPoint(50, 50));
+      final upright = controller.state.elements.single;
 
-    controller.tipOrStand(upright, const PhysicalPoint(10, 0));
-    final flat = controller.state.elements.single;
-    expect(flat.pose, PyramidPose.flat);
-    expect(flat.headingDegrees, closeTo(90, 0.001));
-    expect(flat.position.xMm, greaterThan(50));
+      controller.tipOrStand(upright, const PhysicalPoint(10, 0));
+      final flat = controller.state.elements.single;
+      expect(flat.pose, PyramidPose.flat);
+      expect(flat.headingDegrees, closeTo(90, 0.001));
+      expect(flat.position.xMm, greaterThan(50));
 
-    controller.tipOrStand(flat, const PhysicalPoint(-10, 0));
-    final stood = controller.state.elements.single;
-    expect(stood.pose, PyramidPose.upright);
-    expect(stood.position.xMm, closeTo(50, 0.001));
-    expect(stood.position.yMm, closeTo(50, 0.001));
-  });
+      controller.tipOrStand(flat, const PhysicalPoint(-10, 0));
+      final stood = controller.state.elements.single;
+      expect(stood.pose, PyramidPose.upright);
+      expect(stood.position.xMm, closeTo(50, 0.001));
+      expect(stood.position.yMm, closeTo(50, 0.001));
+    },
+  );
 }

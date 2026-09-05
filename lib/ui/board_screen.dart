@@ -64,9 +64,9 @@ class _BoardScreenState extends State<BoardScreen> {
   }
 
   PhysicalPoint _toPhysical(Offset point) => PhysicalPoint(
-        point.dx / widget.logicalPixelsPerMm,
-        point.dy / widget.logicalPixelsPerMm,
-      );
+    point.dx / widget.logicalPixelsPerMm,
+    point.dy / widget.logicalPixelsPerMm,
+  );
 
   void _handleDoubleTapDown(TapDownDetails details) {
     final point = _toPhysical(details.localPosition);
@@ -137,9 +137,7 @@ class _BoardScreenState extends State<BoardScreen> {
     final end = _oneFingerLast;
     if (target != null && start != null && end != null) {
       final drag = PhysicalPoint(end.xMm - start.xMm, end.yMm - start.yMm);
-      final displacement = math.sqrt(
-        drag.xMm * drag.xMm + drag.yMm * drag.yMm,
-      );
+      final displacement = math.sqrt(drag.xMm * drag.xMm + drag.yMm * drag.yMm);
       if (target.pose == PyramidPose.upright &&
           _oneFingerPathMm >= 15 &&
           displacement <= 4) {
@@ -198,12 +196,16 @@ class _BoardScreenState extends State<BoardScreen> {
                     children: [
                       IconButton(
                         tooltip: 'Undo',
-                        onPressed: _controller.canUndo ? _controller.undo : null,
+                        onPressed: _controller.canUndo
+                            ? _controller.undo
+                            : null,
                         icon: const Icon(Icons.undo),
                       ),
                       IconButton(
                         tooltip: 'Redo',
-                        onPressed: _controller.canRedo ? _controller.redo : null,
+                        onPressed: _controller.canRedo
+                            ? _controller.redo
+                            : null,
                         icon: const Icon(Icons.redo),
                       ),
                       IconButton(
