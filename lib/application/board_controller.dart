@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 
 import '../domain/board_command.dart';
@@ -59,16 +61,68 @@ class BoardController extends ChangeNotifier {
   }
 
   void toggleIllumination(LightElement element) {
-    if (element.pose != PyramidPose.upright) return;
-    final next = element.illumination == IlluminationPattern.full
+    final current = _state.elementById(element.id);
+    if (current == null || current.pose != PyramidPose.upright) return;
+    final next = current.illumination == IlluminationPattern.full
         ? IlluminationPattern.wall
         : IlluminationPattern.full;
-    _replace(element, element.copyWith(illumination: next));
+    _replace(current, current.copyWith(illumination: next));
+  }
+
+  void tipOrStand(LightElement element, PhysicalPoint drag) {
+    final current = _state.elementById(element.id);
+    if (current == null) return;
+    final distance = math.sqrt(drag.xMm * drag.xMm + drag.yMm * drag.yMm);
+    if (distance < 4) return;
+
+    final base = geometry.baseMm(current.size);
+    final length = geometry.flatLengthMm(current.size);
+    final hingeTravel = (base + length) / 2;
+
+    if (current.pose == PyramidPose.upright) {
+      final ux = drag.xMm / distance;
+      final uy = drag.yMm / distance;
+      final dragAngle = math.atan2(uy, ux) * 180 / math.pi;
+      _replace(
+        current,
+        current.copyWith(
+          pose: PyramidPose.flat,
+          position: PhysicalPoint(
+            current.position.xMm + ux * hingeTravel,
+            current.position.yMm + uy * hingeTravel,
+          ),
+          headingDegrees: normalizeDegrees(dragAngle + 90),
+          illumination: IlluminationPattern.full,
+        ),
+      );
+      return;
+    }
+
+    final rotation = -current.headingDegrees * math.pi / 180;
+    final localX = drag.xMm * math.cos(rotation) - drag.yMm * math.sin(rotation);
+    final localY = drag.xMm * math.sin(rotation) + drag.yMm * math.cos(rotation);
+    if (localY <= 0 || localY <= localX.abs()) return;
+
+    final heading = current.headingDegrees * math.pi / 180;
+    final shiftX = -hingeTravel * math.sin(heading);
+    final shiftY = hingeTravel * math.cos(heading);
+    _replace(
+      current,
+      current.copyWith(
+        pose: PyramidPose.upright,
+        position: PhysicalPoint(
+          current.position.xMm + shiftX,
+          current.position.yMm + shiftY,
+        ),
+      ),
+    );
   }
 
   void beginTransform(LightElement element) {
-    _transformingId = element.id;
-    _transformBefore = element;
+    final current = _state.elementById(element.id);
+    if (current == null) return;
+    _transformingId = current.id;
+    _transformBefore = current;
   }
 
   void transformBy(PhysicalPoint delta, double rotationDeltaRadians) {

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'application/board_store.dart';
+import 'application/display_calibration.dart';
+import 'domain/board_state.dart';
 import 'ui/board_screen.dart';
 import 'ui/calibration_screen.dart';
 
@@ -16,7 +19,63 @@ class LightHouseApp extends StatefulWidget {
 }
 
 class _LightHouseAppState extends State<LightHouseApp> {
-  double? _logicalPixelsPerMm;
+  final BoardStore _store = BoardStore();
+  BoardState? _board;
+  CalibrationResult? _calibration;
+  bool _resolvingCalibration = false;
+  bool _forceManualCalibration = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBoard();
+  }
+
+  Future<void> _loadBoard() async {
+    final board = await _store.load();
+    if (!mounted) return;
+    setState(() => _board = board);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_calibration == null &&
+        !_resolvingCalibration &&
+        !_forceManualCalibration) {
+      _resolveCalibration();
+    }
+  }
+
+  Future<void> _resolveCalibration() async {
+    _resolvingCalibration = true;
+    final result = await DisplayCalibrationService.resolve(context);
+    if (!mounted) return;
+    setState(() {
+      _calibration = result;
+      _resolvingCalibration = false;
+      if (result == null) _forceManualCalibration = true;
+    });
+  }
+
+  void _recalibrate() {
+    setState(() {
+      _forceManualCalibration = true;
+      _calibration = null;
+    });
+  }
+
+  Future<void> _completeManualCalibration(double value) async {
+    await DisplayCalibrationService.saveManual(value);
+    if (!mounted) return;
+    setState(() {
+      _calibration = CalibrationResult(
+        logicalPixelsPerMm: value,
+        source: 'Manual calibration',
+      );
+      _forceManualCalibration = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,18 +83,28 @@ class _LightHouseAppState extends State<LightHouseApp> {
       title: 'LightHouse',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(useMaterial3: true),
-      home: _logicalPixelsPerMm == null
-          ? CalibrationScreen(
-              onComplete: (value) {
-                setState(() => _logicalPixelsPerMm = value);
-              },
-            )
-          : BoardScreen(
-              logicalPixelsPerMm: _logicalPixelsPerMm!,
-              onRecalibrate: () {
-                setState(() => _logicalPixelsPerMm = null);
-              },
-            ),
+      home: _buildHome(),
+    );
+  }
+
+  Widget _buildHome() {
+    if (_board == null || _resolvingCalibration) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_forceManualCalibration || _calibration == null) {
+      return CalibrationScreen(onComplete: _completeManualCalibration);
+    }
+
+    final calibration = _calibration!;
+    return BoardScreen(
+      logicalPixelsPerMm: calibration.logicalPixelsPerMm,
+      initialState: _board!,
+      calibrationLabel: calibration.source,
+      onRecalibrate: _recalibrate,
     );
   }
 }
