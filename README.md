@@ -1,20 +1,28 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# LightHouse
 
-# Run and deploy your AI Studio app
+LightHouse is an interactive illuminated physical play surface for Looney Pyramids. The screen and the physical plastic pieces together form the interface.
 
-This contains everything you need to run your app locally.
+## Current development
 
-View your app in AI Studio: https://ai.studio/apps/drive/1zQXcWOHhs6DjSEOUjf8x2oQ0IdoSLA5I
+A clean-sheet Flutter rewrite is under active development on the [`lighthouse-2-rewrite`](../../tree/lighthouse-2-rewrite) branch and in draft pull request #1.
 
-## Run Locally
+The application code remaining on `main` is the original 2025 React / Google AI Studio prototype, preserved as development history. **LightHouse does not require Gemini or any other AI service.** The old AI Studio instructions previously shown here were generated scaffolding and were not part of the actual application.
 
-**Prerequisites:**  Node.js
+## LightHouse 2
 
+The rewrite is designed around physical dimensions rather than screen pixels. Its current implementation includes:
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- board geometry stored in millimeters
+- automatic physical-size calibration for recognized iPhone models, with manual calibration fallback
+- Small, Medium, and Large Looney Pyramid light footprints
+- upright and flat footprints
+- full and wall-only illumination for upright pyramids
+- touch interactions for creation, resizing, tipping/standing, moving, rotating, and changing illumination
+- command-based undo/redo
+- local autosave
+- iOS, Android, and web targets
+- automated analysis and tests
+
+The first development target is accurate physical alignment and interaction on an iPhone. Android and browser distribution are planned from the same Flutter codebase.
+
+See the rewrite branch for the current source and architecture documentation.
