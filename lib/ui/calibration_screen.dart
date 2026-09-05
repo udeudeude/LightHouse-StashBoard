@@ -70,7 +70,10 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                   FilledButton(
                     onPressed: () => widget.onComplete(_logicalPixelsPerMm),
                     child: const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
                       child: Text('Use calibration'),
                     ),
                   ),

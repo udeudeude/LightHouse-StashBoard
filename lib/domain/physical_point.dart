@@ -24,9 +24,9 @@ class PhysicalPoint {
   Map<String, Object> toJson() => {'xMm': xMm, 'yMm': yMm};
 
   factory PhysicalPoint.fromJson(Map<String, Object?> json) => PhysicalPoint(
-        (json['xMm'] as num).toDouble(),
-        (json['yMm'] as num).toDouble(),
-      );
+    (json['xMm'] as num).toDouble(),
+    (json['yMm'] as num).toDouble(),
+  );
 
   @override
   bool operator ==(Object other) =>

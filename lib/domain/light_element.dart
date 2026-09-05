@@ -41,26 +41,26 @@ class LightElement {
   }
 
   Map<String, Object> toJson() => {
-        'id': id,
-        'size': size.name,
-        'pose': pose.name,
-        'position': position.toJson(),
-        'headingDegrees': headingDegrees,
-        'illumination': illumination.name,
-      };
+    'id': id,
+    'size': size.name,
+    'pose': pose.name,
+    'position': position.toJson(),
+    'headingDegrees': headingDegrees,
+    'illumination': illumination.name,
+  };
 
   factory LightElement.fromJson(Map<String, Object?> json) => LightElement(
-        id: json['id']! as String,
-        size: PyramidSize.values.byName(json['size']! as String),
-        pose: PyramidPose.values.byName(json['pose']! as String),
-        position: PhysicalPoint.fromJson(
-          (json['position']! as Map).cast<String, Object?>(),
-        ),
-        headingDegrees: (json['headingDegrees']! as num).toDouble(),
-        illumination: IlluminationPattern.values.byName(
-          json['illumination']! as String,
-        ),
-      );
+    id: json['id']! as String,
+    size: PyramidSize.values.byName(json['size']! as String),
+    pose: PyramidPose.values.byName(json['pose']! as String),
+    position: PhysicalPoint.fromJson(
+      (json['position']! as Map).cast<String, Object?>(),
+    ),
+    headingDegrees: (json['headingDegrees']! as num).toDouble(),
+    illumination: IlluminationPattern.values.byName(
+      json['illumination']! as String,
+    ),
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -73,12 +73,6 @@ class LightElement {
       other.illumination == illumination;
 
   @override
-  int get hashCode => Object.hash(
-        id,
-        size,
-        pose,
-        position,
-        headingDegrees,
-        illumination,
-      );
+  int get hashCode =>
+      Object.hash(id, size, pose, position, headingDegrees, illumination);
 }

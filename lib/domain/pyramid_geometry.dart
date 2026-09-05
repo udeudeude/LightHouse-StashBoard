@@ -30,14 +30,14 @@ class PyramidGeometryProfile {
   final double wallBandMm;
 
   double baseMm(PyramidSize size) => switch (size) {
-        PyramidSize.small => smallBaseMm,
-        PyramidSize.medium => mediumBaseMm,
-        PyramidSize.large => largeBaseMm,
-      };
+    PyramidSize.small => smallBaseMm,
+    PyramidSize.medium => mediumBaseMm,
+    PyramidSize.large => largeBaseMm,
+  };
 
   double flatLengthMm(PyramidSize size) => switch (size) {
-        PyramidSize.small => smallFlatLengthMm,
-        PyramidSize.medium => mediumFlatLengthMm,
-        PyramidSize.large => largeFlatLengthMm,
-      };
+    PyramidSize.small => smallFlatLengthMm,
+    PyramidSize.medium => mediumFlatLengthMm,
+    PyramidSize.large => largeFlatLengthMm,
+  };
 }

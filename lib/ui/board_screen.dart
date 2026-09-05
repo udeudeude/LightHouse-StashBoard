@@ -37,9 +37,9 @@ class _BoardScreenState extends State<BoardScreen> {
   void _refresh() => setState(() {});
 
   PhysicalPoint _toPhysical(Offset point) => PhysicalPoint(
-        point.dx / widget.logicalPixelsPerMm,
-        point.dy / widget.logicalPixelsPerMm,
-      );
+    point.dx / widget.logicalPixelsPerMm,
+    point.dy / widget.logicalPixelsPerMm,
+  );
 
   void _handleDoubleTapDown(TapDownDetails details) {
     final point = _toPhysical(details.localPosition);
@@ -93,12 +93,16 @@ class _BoardScreenState extends State<BoardScreen> {
                     children: [
                       IconButton(
                         tooltip: 'Undo',
-                        onPressed: _controller.canUndo ? _controller.undo : null,
+                        onPressed: _controller.canUndo
+                            ? _controller.undo
+                            : null,
                         icon: const Icon(Icons.undo),
                       ),
                       IconButton(
                         tooltip: 'Redo',
-                        onPressed: _controller.canRedo ? _controller.redo : null,
+                        onPressed: _controller.canRedo
+                            ? _controller.redo
+                            : null,
                         icon: const Icon(Icons.redo),
                       ),
                       IconButton(

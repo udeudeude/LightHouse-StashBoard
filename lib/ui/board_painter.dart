@@ -38,7 +38,11 @@ class BoardPainter extends CustomPainter {
     canvas.rotate(element.headingDegrees * math.pi / 180);
 
     if (element.pose == PyramidPose.upright) {
-      final rect = Rect.fromCenter(center: Offset.zero, width: base, height: base);
+      final rect = Rect.fromCenter(
+        center: Offset.zero,
+        width: base,
+        height: base,
+      );
       if (element.illumination == IlluminationPattern.full) {
         canvas.drawRect(rect, Paint()..color = Colors.white);
       } else {
