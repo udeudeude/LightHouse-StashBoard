@@ -1,20 +1,53 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# LightHouse
 
-# Run and deploy your AI Studio app
+LightHouse is an interactive illuminated physical play surface for Looney Pyramids. The screen and the plastic pieces together form the interface.
 
-This contains everything you need to run your app locally.
+This branch is the clean-sheet Flutter rewrite of the 2025 React/AI Studio prototype.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1zQXcWOHhs6DjSEOUjf8x2oQ0IdoSLA5I
+## Current prototype slice
 
-## Run Locally
+Implemented in the rewrite:
 
-**Prerequisites:**  Node.js
+- physical board coordinates stored in millimeters
+- 50 mm ruler calibration
+- upright Small, Medium, and Large light footprints
+- full and wall-only upright illumination
+- flat pyramid rendering
+- double-tap empty board to create a Small upright footprint
+- double-tap a footprint to cycle Small -> Medium -> Large -> delete
+- scribble over an upright footprint to toggle full/wall illumination
+- one-finger directional drag to tip an upright footprint or stand a flat footprint
+- two-finger translate and rotate
+- command-based undo/redo
+- versioned JSON board serialization
 
+Not implemented yet:
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- real stack/nest structures
+- polygon collision and pushing
+- persistent local storage
+- saved-board management and import/export UI
+- platform brightness, idle-timer, fullscreen, haptics, and orientation adapters
+- device cutout/safe-board geometry
+- measured geometry profiles for different pyramid generations
+
+## Development
+
+The source is a Flutter app. Flutter 3.47 / Dart 3.13 or newer is the current baseline.
+
+This first rewrite commit intentionally contains only the shared Flutter source and tests. Generate the standard platform runners once on a development machine:
+
+```sh
+flutter create . --project-name lighthouse --org com.udeudeude --platforms=ios,android,web
+flutter pub get
+flutter test
+flutter run
+```
+
+The generated iOS, Android, and web runners should then be committed once their identifiers and platform settings are reviewed.
+
+## Design rule
+
+Canonical board state is expressed in physical millimeters. Screen pixels or Flutter logical pixels belong only at the calibration/rendering boundary.
+
+See `docs/architecture.md` for the current design decisions.
