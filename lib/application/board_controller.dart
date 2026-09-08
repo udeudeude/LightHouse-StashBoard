@@ -4,8 +4,10 @@ import 'package:flutter/foundation.dart';
 
 import '../domain/board_command.dart';
 import '../domain/board_state.dart';
+import '../domain/convex_geometry.dart';
 import '../domain/geometry.dart';
 import '../domain/light_element.dart';
+import '../domain/light_structure.dart';
 import '../domain/physical_point.dart';
 import '../domain/pyramid_geometry.dart';
 
@@ -21,8 +23,8 @@ class BoardController extends ChangeNotifier {
 
   final List<BoardCommand> _undoStack = [];
   final List<BoardCommand> _redoStack = [];
-  String? _transformingId;
-  LightElement? _transformBefore;
+  Set<String> _transformingIds = const {};
+  BoardState? _transformBeforeState;
   static int _idCounter = 0;
 
   bool get canUndo => _undoStack.isNotEmpty;
@@ -37,6 +39,9 @@ class BoardController extends ChangeNotifier {
     return null;
   }
 
+  LightStructure? structureFor(LightElement element) =>
+      _state.structureForElement(element.id);
+
   void createAt(PhysicalPoint position) {
     final element = LightElement(
       id: _newId(),
@@ -50,13 +55,15 @@ class BoardController extends ChangeNotifier {
   }
 
   void cycleSizeOrDelete(LightElement element) {
-    switch (element.size) {
+    final current = _state.elementById(element.id);
+    if (current == null) return;
+    switch (current.size) {
       case PyramidSize.small:
-        _replace(element, element.copyWith(size: PyramidSize.medium));
+        _replace(current, current.copyWith(size: PyramidSize.medium));
       case PyramidSize.medium:
-        _replace(element, element.copyWith(size: PyramidSize.large));
+        _replace(current, current.copyWith(size: PyramidSize.large));
       case PyramidSize.large:
-        _execute(RemoveElementCommand(element));
+        _execute(RemoveElementCommand(current));
     }
   }
 
@@ -123,38 +130,169 @@ class BoardController extends ChangeNotifier {
   void beginTransform(LightElement element) {
     final current = _state.elementById(element.id);
     if (current == null) return;
-    _transformingId = current.id;
-    _transformBefore = current;
+    final structure = _state.structureForElement(current.id);
+    _transformingIds = structure == null
+        ? {current.id}
+        : structure.memberIds.toSet();
+    _transformBeforeState = _state;
   }
 
   void transformBy(PhysicalPoint delta, double rotationDeltaRadians) {
-    final id = _transformingId;
-    if (id == null) return;
-    final current = _state.elementById(id);
-    if (current == null) return;
-    _state = _state.replace(
-      current.copyWith(
-        position: current.position + delta,
-        headingDegrees: normalizeDegrees(
-          current.headingDegrees + radiansToDegrees(rotationDeltaRadians),
+    if (_transformingIds.isEmpty) return;
+    final rotationDelta = radiansToDegrees(rotationDeltaRadians);
+    final replacements = <LightElement>[];
+    for (final id in _transformingIds) {
+      final current = _state.elementById(id);
+      if (current == null) continue;
+      replacements.add(
+        current.copyWith(
+          position: current.position + delta,
+          headingDegrees: normalizeDegrees(
+            current.headingDegrees + rotationDelta,
+          ),
         ),
-      ),
-    );
+      );
+    }
+    if (replacements.isEmpty) return;
+    _state = _state.replaceMany(replacements);
     notifyListeners();
   }
 
   void endTransform() {
-    final before = _transformBefore;
-    final id = _transformingId;
-    _transformBefore = null;
-    _transformingId = null;
-    if (before == null || id == null) return;
-    final after = _state.elementById(id);
-    if (after == null || after == before) return;
-    _undoStack.add(ReplaceElementCommand(before: before, after: after));
+    final before = _transformBeforeState;
+    final movingIds = _transformingIds;
+    _transformBeforeState = null;
+    _transformingIds = const {};
+    if (before == null || movingIds.isEmpty) return;
+
+    _state = _resolvePushes(_state, movingIds);
+    if (identical(before, _state)) return;
+    _undoStack.add(ReplaceBoardStateCommand(before: before, after: _state));
     _redoStack.clear();
     notifyListeners();
   }
+
+  void cancelTransform() {
+    final before = _transformBeforeState;
+    _transformBeforeState = null;
+    _transformingIds = const {};
+    if (before == null) return;
+    _state = before;
+    notifyListeners();
+  }
+
+  bool snapIntoNearestStructure(
+    LightElement element,
+    StructureKind kind, {
+    double snapDistanceMm = 12,
+  }) {
+    final current = _state.elementById(element.id);
+    if (current == null || current.pose != PyramidPose.upright) return false;
+
+    final currentStructure = _state.structureForElement(current.id);
+    final currentIds = currentStructure?.memberIds.toSet() ?? {current.id};
+    LightElement? nearest;
+    var nearestDistance = double.infinity;
+
+    for (final candidate in _state.elements) {
+      if (currentIds.contains(candidate.id) ||
+          candidate.pose != PyramidPose.upright) {
+        continue;
+      }
+      final distance = current.position.distanceTo(candidate.position);
+      if (distance <= snapDistanceMm && distance < nearestDistance) {
+        nearest = candidate;
+        nearestDistance = distance;
+      }
+    }
+
+    final target = nearest;
+    if (target == null) return false;
+
+    final targetStructure = _state.structureForElement(target.id);
+    final targetIds = targetStructure?.memberIds.toSet() ?? {target.id};
+    final combinedIds = {...currentIds, ...targetIds};
+    final combined = combinedIds
+        .map(_state.elementById)
+        .whereType<LightElement>()
+        .toList();
+
+    final sizes = combined.map((member) => member.size).toSet();
+    if (sizes.length != combined.length) return false;
+
+    final anchor = targetStructure == null
+        ? target
+        : _state.elementById(targetStructure.memberIds.first) ?? target;
+    combined.sort((a, b) => b.size.index.compareTo(a.size.index));
+
+    var after = _state;
+    if (currentStructure != null) {
+      after = after.removeStructure(currentStructure.id);
+    }
+    if (targetStructure != null &&
+        targetStructure.id != currentStructure?.id) {
+      after = after.removeStructure(targetStructure.id);
+    }
+
+    after = after.replaceMany([
+      for (final member in combined)
+        member.copyWith(
+          position: anchor.position,
+          headingDegrees: anchor.headingDegrees,
+        ),
+    ]);
+
+    final structure = LightStructure(
+      id: targetStructure?.id ?? currentStructure?.id ?? 'structure-${_newId()}',
+      kind: kind,
+      memberIds: [for (final member in combined) member.id],
+    );
+    after = after.upsertStructure(structure);
+    _execute(ReplaceBoardStateCommand(before: _state, after: after));
+    return true;
+  }
+
+  bool detachFromStructure(LightElement element) {
+    final structure = _state.structureForElement(element.id);
+    if (structure == null) return false;
+    final remaining = structure.memberIds
+        .where((id) => id != element.id)
+        .toList();
+    final after = remaining.length < 2
+        ? _state.removeStructure(structure.id)
+        : _state.upsertStructure(structure.copyWith(memberIds: remaining));
+    _execute(ReplaceBoardStateCommand(before: _state, after: after));
+    return true;
+  }
+
+  bool toggleStructureKind(LightElement element) {
+    final structure = _state.structureForElement(element.id);
+    if (structure == null) return false;
+    final next = structure.kind == StructureKind.stack
+        ? StructureKind.nest
+        : StructureKind.stack;
+    final after = _state.upsertStructure(structure.copyWith(kind: next));
+    _execute(ReplaceBoardStateCommand(before: _state, after: after));
+    return true;
+  }
+
+  void renameBoard(String title) {
+    final trimmed = title.trim();
+    if (trimmed.isEmpty || trimmed == _state.title) return;
+    final after = _state.copyWith(title: trimmed);
+    _execute(ReplaceBoardStateCommand(before: _state, after: after));
+  }
+
+  void replaceState(BoardState state, {bool clearHistory = true}) {
+    _state = state;
+    if (clearHistory) {
+      _undoStack.clear();
+      _redoStack.clear();
+    }
+    notifyListeners();
+  }
+
+  void newBoard() => replaceState(BoardState.empty());
 
   void undo() {
     if (_undoStack.isEmpty) return;
@@ -170,6 +308,40 @@ class BoardController extends ChangeNotifier {
     _state = command.apply(_state);
     _undoStack.add(command);
     notifyListeners();
+  }
+
+  BoardState _resolvePushes(BoardState initial, Set<String> movingIds) {
+    var result = initial;
+    final movedElements = movingIds
+        .map(result.elementById)
+        .whereType<LightElement>()
+        .toList();
+
+    for (final moving in movedElements) {
+      for (final stationary in result.elements.toList()) {
+        if (movingIds.contains(stationary.id) || moving.size != stationary.size) {
+          continue;
+        }
+        final separation = minimumSeparationVector(
+          polygonForElement(moving, geometry),
+          polygonForElement(stationary, geometry),
+        );
+        if (separation == null) continue;
+
+        final stationaryStructure = result.structureForElement(stationary.id);
+        final pushedIds = stationaryStructure?.memberIds ?? [stationary.id];
+        final replacements = <LightElement>[];
+        for (final id in pushedIds) {
+          final member = result.elementById(id);
+          if (member == null) continue;
+          replacements.add(
+            member.copyWith(position: member.position + separation),
+          );
+        }
+        result = result.replaceMany(replacements);
+      }
+    }
+    return result;
   }
 
   void _replace(LightElement before, LightElement after) {
