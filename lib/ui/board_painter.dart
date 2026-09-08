@@ -11,11 +11,13 @@ class BoardPainter extends CustomPainter {
     required this.state,
     required this.logicalPixelsPerMm,
     required this.geometry,
+    this.selectedId,
   });
 
   final BoardState state;
   final double logicalPixelsPerMm;
   final PyramidGeometryProfile geometry;
+  final String? selectedId;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -54,6 +56,15 @@ class BoardPainter extends CustomPainter {
           ..addRect(inner);
         canvas.drawPath(ring, Paint()..color = Colors.white);
       }
+      if (element.id == selectedId) {
+        canvas.drawRect(
+          rect.inflate(3),
+          Paint()
+            ..color = Colors.white54
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1,
+        );
+      }
     } else {
       final triangle = Path()
         ..moveTo(0, -flatLength / 2)
@@ -61,6 +72,15 @@ class BoardPainter extends CustomPainter {
         ..lineTo(-base / 2, flatLength / 2)
         ..close();
       canvas.drawPath(triangle, Paint()..color = Colors.white);
+      if (element.id == selectedId) {
+        canvas.drawPath(
+          triangle,
+          Paint()
+            ..color = Colors.white54
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2,
+        );
+      }
     }
 
     canvas.restore();
@@ -70,5 +90,6 @@ class BoardPainter extends CustomPainter {
   bool shouldRepaint(BoardPainter oldDelegate) =>
       oldDelegate.state != state ||
       oldDelegate.logicalPixelsPerMm != logicalPixelsPerMm ||
-      oldDelegate.geometry != geometry;
+      oldDelegate.geometry != geometry ||
+      oldDelegate.selectedId != selectedId;
 }
