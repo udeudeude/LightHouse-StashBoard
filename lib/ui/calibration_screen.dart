@@ -38,14 +38,14 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                   ),
                   const SizedBox(height: 16),
                   const Text(
-                    'Hold a ruler to the screen. Adjust the slider until the white bar is exactly 50 mm long.',
+                    'Hold a ruler to the screen with 0 aligned to the fixed left end. Adjust the slider until the right end reaches exactly 50 mm.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.white70, fontSize: 16),
                   ),
                   const SizedBox(height: 32),
                   Container(
                     height: 72,
-                    alignment: Alignment.center,
+                    alignment: Alignment.centerLeft,
                     decoration: BoxDecoration(
                       color: const Color(0xFF111111),
                       borderRadius: BorderRadius.circular(12),
