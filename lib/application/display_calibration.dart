@@ -1,5 +1,6 @@
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -17,6 +18,7 @@ class CalibrationResult {
 
 class DisplayCalibrationService {
   static const _manualKey = 'lighthouse-manual-logical-pixels-per-mm';
+  static const _displayChannel = MethodChannel('lighthouse/display');
 
   static Future<CalibrationResult?> resolve(BuildContext context) async {
     final prefs = SharedPreferencesAsync();
@@ -28,19 +30,41 @@ class DisplayCalibrationService {
       );
     }
 
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return null;
-
-    final info = await DeviceInfoPlugin().iosInfo;
-    final identifier = info.utsname.machine;
-    final ppi = _iosPpi[identifier];
-    if (ppi == null) return null;
+    if (kIsWeb) return null;
 
     final devicePixelRatio = View.of(context).devicePixelRatio;
-    return CalibrationResult(
-      logicalPixelsPerMm: ppi / devicePixelRatio / 25.4,
-      source: 'Automatic: $identifier',
-      deviceIdentifier: identifier,
-    );
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      final info = await DeviceInfoPlugin().iosInfo;
+      final identifier = info.utsname.machine;
+      final ppi = _iosPpi[identifier];
+      if (ppi == null) return null;
+      return CalibrationResult(
+        logicalPixelsPerMm: ppi / devicePixelRatio / 25.4,
+        source: 'Automatic: $identifier',
+        deviceIdentifier: identifier,
+      );
+    }
+
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        final reported = await _displayChannel.invokeMapMethod<String, Object?>(
+          'physicalDpi',
+        );
+        final xdpi = (reported?['xdpi'] as num?)?.toDouble();
+        final ydpi = (reported?['ydpi'] as num?)?.toDouble();
+        if (xdpi == null || ydpi == null) return null;
+        final ppi = (xdpi + ydpi) / 2;
+        if (ppi < 100 || ppi > 1000) return null;
+        return CalibrationResult(
+          logicalPixelsPerMm: ppi / devicePixelRatio / 25.4,
+          source: 'Automatic: Android reported DPI',
+        );
+      } on PlatformException {
+        return null;
+      }
+    }
+
+    return null;
   }
 
   static Future<void> saveManual(double logicalPixelsPerMm) async {
