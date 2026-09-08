@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lighthouse/application/board_controller.dart';
+import 'package:lighthouse/domain/board_state.dart';
 import 'package:lighthouse/domain/light_element.dart';
+import 'package:lighthouse/domain/light_structure.dart';
 import 'package:lighthouse/domain/physical_point.dart';
 
 void main() {
@@ -62,4 +64,80 @@ void main() {
       expect(stood.position.yMm, closeTo(50, 0.001));
     },
   );
+
+  test('different sizes snap into a co-located structure', () {
+    const large = LightElement(
+      id: 'large',
+      size: PyramidSize.large,
+      pose: PyramidPose.upright,
+      position: PhysicalPoint(50, 50),
+      headingDegrees: 0,
+      illumination: IlluminationPattern.wall,
+    );
+    const small = LightElement(
+      id: 'small',
+      size: PyramidSize.small,
+      pose: PyramidPose.upright,
+      position: PhysicalPoint(55, 50),
+      headingDegrees: 0,
+      illumination: IlluminationPattern.full,
+    );
+    final controller = BoardController(
+      initialState: BoardState(elements: const [large, small]),
+    );
+
+    expect(
+      controller.snapIntoNearestStructure(small, StructureKind.stack),
+      isTrue,
+    );
+    expect(controller.state.structures, hasLength(1));
+    expect(
+      controller.state.elementById('small')!.position,
+      controller.state.elementById('large')!.position,
+    );
+  });
+
+  test('moving one member moves the whole structure', () {
+    const large = LightElement(
+      id: 'large',
+      size: PyramidSize.large,
+      pose: PyramidPose.upright,
+      position: PhysicalPoint(50, 50),
+      headingDegrees: 0,
+      illumination: IlluminationPattern.wall,
+    );
+    const small = LightElement(
+      id: 'small',
+      size: PyramidSize.small,
+      pose: PyramidPose.upright,
+      position: PhysicalPoint(50, 50),
+      headingDegrees: 0,
+      illumination: IlluminationPattern.full,
+    );
+    final controller = BoardController(
+      initialState: BoardState(
+        elements: const [large, small],
+        structures: const [
+          LightStructure(
+            id: 'structure',
+            kind: StructureKind.stack,
+            memberIds: ['large', 'small'],
+          ),
+        ],
+      ),
+    );
+
+    controller.beginTransform(small);
+    controller.transformBy(const PhysicalPoint(10, 5), 0);
+    controller.endTransform();
+
+    expect(
+      controller.state.elementById('large')!.position,
+      const PhysicalPoint(60, 55),
+    );
+    expect(
+      controller.state.elementById('small')!.position,
+      const PhysicalPoint(60, 55),
+    );
+  });
 }
