@@ -2,6 +2,14 @@
 
 LightHouse is an interactive illuminated physical play surface for Looney Pyramids. The screen and the physical plastic pieces together form the interface.
 
+## Try LightHouse 2
+
+The current Flutter rewrite is continuously deployed for browser testing:
+
+https://udeudeude.github.io/LightHouse-StashBoard/
+
+The browser build requires manual physical calibration. Native iOS can automatically calibrate recognized iPhone models; Android can use reported physical display DPI when trustworthy.
+
 ## Current development
 
 A clean-sheet Flutter rewrite is under active development on the [`lighthouse-2-rewrite`](../../tree/lighthouse-2-rewrite) branch and in draft pull request #1.
@@ -10,19 +18,26 @@ The application code remaining on `main` is the original 2025 React / Google AI 
 
 ## LightHouse 2
 
-The rewrite is designed around physical dimensions rather than screen pixels. Its current implementation includes:
+The rewrite is designed around physical dimensions rather than screen pixels. It currently includes:
 
-- board geometry stored in millimeters
-- automatic physical-size calibration for recognized iPhone models, with manual calibration fallback
-- Small, Medium, and Large Looney Pyramid light footprints
-- upright and flat footprints
-- full and wall-only illumination for upright pyramids
-- touch interactions for creation, resizing, tipping/standing, moving, rotating, and changing illumination
+- board geometry and gesture tolerances stored in millimeters
+- automatic and manual physical-size calibration
+- Small, Medium, and Large light footprints
+- upright/flat pose and full/wall-only upright illumination
+- create, resize/delete, tip/stand, scribble, translate, and rotate interactions
+- desktop mouse interaction for browser testing
+- stack/nest structures with independently illuminated members
+- deterministic polygon collision/pushing
 - command-based undo/redo
-- local autosave
+- autosave with recovery backup
+- named saved boards and JSON import/export
+- native screen-awake, brightness, haptic, orientation, and safe-display behavior
+- installable PWA behavior
 - iOS, Android, and web targets
-- automated analysis and tests
+- automated formatting, analysis, tests, and platform build validation
 
-The first development target is accurate physical alignment and interaction on an iPhone. Android and browser distribution are planned from the same Flutter codebase.
+See the rewrite branch for the current source, architecture documentation, and changelog.
 
-See the rewrite branch for the current source and architecture documentation.
+## License
+
+MIT.
