@@ -77,7 +77,7 @@ PhysicalPoint? minimumSeparationVector(
   );
 }
 
-( double, double ) _project(
+(double, double) _project(
   List<PhysicalPoint> polygon,
   PhysicalPoint axis,
 ) {
