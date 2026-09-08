@@ -229,8 +229,7 @@ class BoardController extends ChangeNotifier {
     if (currentStructure != null) {
       after = after.removeStructure(currentStructure.id);
     }
-    if (targetStructure != null &&
-        targetStructure.id != currentStructure?.id) {
+    if (targetStructure != null && targetStructure.id != currentStructure?.id) {
       after = after.removeStructure(targetStructure.id);
     }
 
@@ -243,7 +242,10 @@ class BoardController extends ChangeNotifier {
     ]);
 
     final structure = LightStructure(
-      id: targetStructure?.id ?? currentStructure?.id ?? 'structure-${_newId()}',
+      id:
+          targetStructure?.id ??
+          currentStructure?.id ??
+          'structure-${_newId()}',
       kind: kind,
       memberIds: [for (final member in combined) member.id],
     );
@@ -319,7 +321,8 @@ class BoardController extends ChangeNotifier {
 
     for (final moving in movedElements) {
       for (final stationary in result.elements.toList()) {
-        if (movingIds.contains(stationary.id) || moving.size != stationary.size) {
+        if (movingIds.contains(stationary.id) ||
+            moving.size != stationary.size) {
           continue;
         }
         final separation = minimumSeparationVector(

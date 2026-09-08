@@ -11,10 +11,7 @@ class LightStructure {
   final StructureKind kind;
   final List<String> memberIds;
 
-  LightStructure copyWith({
-    StructureKind? kind,
-    List<String>? memberIds,
-  }) {
+  LightStructure copyWith({StructureKind? kind, List<String>? memberIds}) {
     return LightStructure(
       id: id,
       kind: kind ?? this.kind,

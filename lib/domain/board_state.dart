@@ -46,7 +46,9 @@ class BoardState {
   BoardState remove(String id) {
     final nextStructures = <LightStructure>[];
     for (final structure in structures) {
-      final members = structure.memberIds.where((member) => member != id).toList();
+      final members = structure.memberIds
+          .where((member) => member != id)
+          .toList();
       if (members.length >= 2) {
         nextStructures.add(structure.copyWith(memberIds: members));
       }
@@ -67,9 +69,7 @@ class BoardState {
   BoardState replaceMany(Iterable<LightElement> replacements) {
     final byId = {for (final element in replacements) element.id: element};
     return copyWith(
-      elements: [
-        for (final element in elements) byId[element.id] ?? element,
-      ],
+      elements: [for (final element in elements) byId[element.id] ?? element],
     );
   }
 

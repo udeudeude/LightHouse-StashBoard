@@ -48,7 +48,8 @@ class BoardStore {
     for (final entry in library.entries) {
       final record = (entry.value as Map).cast<String, Object?>();
       final state = _stateFromRecord(record);
-      final updatedAt = DateTime.tryParse(record['updatedAt'] as String? ?? '') ??
+      final updatedAt =
+          DateTime.tryParse(record['updatedAt'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0);
       if (state != null) {
         summaries.add(

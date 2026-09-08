@@ -53,7 +53,8 @@ PhysicalPoint? minimumSeparationVector(
 
       final projectionA = _project(polygonA, axis);
       final projectionB = _project(polygonB, axis);
-      final overlap = math.min(projectionA.$2, projectionB.$2) -
+      final overlap =
+          math.min(projectionA.$2, projectionB.$2) -
           math.max(projectionA.$1, projectionB.$1);
       if (overlap <= 0) return null;
 
@@ -77,10 +78,7 @@ PhysicalPoint? minimumSeparationVector(
   );
 }
 
-(double, double) _project(
-  List<PhysicalPoint> polygon,
-  PhysicalPoint axis,
-) {
+(double, double) _project(List<PhysicalPoint> polygon, PhysicalPoint axis) {
   var min = double.infinity;
   var max = double.negativeInfinity;
   for (final point in polygon) {
@@ -101,8 +99,7 @@ PhysicalPoint _centroid(List<PhysicalPoint> polygon) {
   return PhysicalPoint(x / polygon.length, y / polygon.length);
 }
 
-double _dot(PhysicalPoint a, PhysicalPoint b) =>
-    a.xMm * b.xMm + a.yMm * b.yMm;
+double _dot(PhysicalPoint a, PhysicalPoint b) => a.xMm * b.xMm + a.yMm * b.yMm;
 
 PhysicalPoint _rotate(PhysicalPoint point, double degrees) {
   final radians = degrees * math.pi / 180;

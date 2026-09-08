@@ -33,8 +33,7 @@ class BoardScreen extends StatefulWidget {
   State<BoardScreen> createState() => _BoardScreenState();
 }
 
-class _BoardScreenState extends State<BoardScreen>
-    with WidgetsBindingObserver {
+class _BoardScreenState extends State<BoardScreen> with WidgetsBindingObserver {
   static const double _interactionHaloMm = 7;
   static const double _tipThresholdMm = 4;
   static const double _scribblePathMm = 15;
@@ -81,10 +80,7 @@ class _BoardScreenState extends State<BoardScreen>
     SystemChrome.setPreferredOrientations(
       orientation == Orientation.portrait
           ? [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown]
-          : [
-              DeviceOrientation.landscapeLeft,
-              DeviceOrientation.landscapeRight,
-            ],
+          : [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight],
     );
   }
 
@@ -220,9 +216,7 @@ class _BoardScreenState extends State<BoardScreen>
     final end = _oneFingerLast;
     if (start != null && end != null) {
       final drag = PhysicalPoint(end.xMm - start.xMm, end.yMm - start.yMm);
-      final displacement = math.sqrt(
-        drag.xMm * drag.xMm + drag.yMm * drag.yMm,
-      );
+      final displacement = math.sqrt(drag.xMm * drag.xMm + drag.yMm * drag.yMm);
 
       if (target == null && displacement <= _tapTravelMm) {
         setState(() => _selectedId = null);
@@ -267,7 +261,8 @@ class _BoardScreenState extends State<BoardScreen>
     _mouseLast = current;
 
     final keyboard = HardwareKeyboard.instance;
-    final shift = keyboard.isLogicalKeyPressed(LogicalKeyboardKey.shiftLeft) ||
+    final shift =
+        keyboard.isLogicalKeyPressed(LogicalKeyboardKey.shiftLeft) ||
         keyboard.isLogicalKeyPressed(LogicalKeyboardKey.shiftRight);
     if (shift) {
       _controller.transformBy(
@@ -522,11 +517,7 @@ class _BoardScreenState extends State<BoardScreen>
           children: [
             const Text('This bar should measure exactly 25 mm:'),
             const SizedBox(height: 12),
-            Container(
-              width: 25 * pixelsPerMm,
-              height: 6,
-              color: Colors.white,
-            ),
+            Container(width: 25 * pixelsPerMm, height: 6, color: Colors.white),
             const SizedBox(height: 24),
             const Text('A Large upright pyramid should fit this square:'),
             const SizedBox(height: 12),
