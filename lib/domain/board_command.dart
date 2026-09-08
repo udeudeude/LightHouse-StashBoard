@@ -42,3 +42,16 @@ class ReplaceElementCommand implements BoardCommand {
   @override
   BoardState revert(BoardState state) => state.replace(before);
 }
+
+class ReplaceBoardStateCommand implements BoardCommand {
+  const ReplaceBoardStateCommand({required this.before, required this.after});
+
+  final BoardState before;
+  final BoardState after;
+
+  @override
+  BoardState apply(BoardState state) => after;
+
+  @override
+  BoardState revert(BoardState state) => before;
+}
