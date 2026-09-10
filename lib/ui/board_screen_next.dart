@@ -163,6 +163,9 @@ class _BoardScreenNextState extends State<BoardScreenNext>
       _faceDownTimer?.cancel();
       _faceDownTimer = null;
       _faceDownLatched = false;
+      if (_creditsVisible && mounted) {
+        setState(() => _creditsVisible = false);
+      }
       return;
     }
     if (_faceDownLatched || _faceDownTimer != null) return;
@@ -875,15 +878,6 @@ class _BoardScreenNextState extends State<BoardScreenNext>
           ],
           child: const Text('Transfer'),
         ),
-        SubmenuButton(
-          menuChildren: [
-            MenuItemButton(
-              onPressed: () => setState(() => _creditsVisible = true),
-              child: const Text('Credits'),
-            ),
-          ],
-          child: const Text('About'),
-        ),
       ],
       builder: (context, menuController, child) => IconButton(
         tooltip: 'Menu',
@@ -908,7 +902,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
 
   Widget _credits() => GestureDetector(
     behavior: HitTestBehavior.opaque,
-    onTap: () => setState(() => _creditsVisible = false),
+    onTap: null,
     child: ColoredBox(
       color: Colors.black,
       child: SafeArea(
@@ -941,7 +935,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
                 ),
                 SizedBox(height: 28),
                 Text(
-                  'Turn the device face-down to reveal this screen.\nTap anywhere to return.',
+                  'Keep the device face-down to view this screen.\nTurn it face-up to return.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white38, fontSize: 12),
                 ),
