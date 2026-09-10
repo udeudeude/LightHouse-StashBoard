@@ -58,8 +58,14 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   String? _activeSavedId;
 
   bool _mouseTransform = false;
-  PhysicalPoint? _mouseLast;
-  double _mouseTravelMm = 0;
+PhysicalPoint? _mouseLast;
+double _mouseTravelMm = 0;
+
+bool _trackpadTransform = false;
+double _trackpadLastRotation = 0;
+bool _desktopScrollTransform = false;
+LightElement? _desktopScrollTarget;
+Timer? _desktopScrollEndTimer;
 
   double _brightness = 1.0;
   bool _orientationLocked = false;
@@ -114,6 +120,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _faceDownTimer?.cancel();
+    _desktopScrollEndTimer?.cancel();
     _accelerometerSubscription?.cancel();
     _controller.removeListener(_refresh);
     _controller.dispose();
@@ -222,7 +229,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   }
 
   void _handleDoubleTapDown(TapDownDetails details) {
-    if (_mouseTransform || _creditsVisible) return;
+    if (_creditsVisible) return;
     final point = _toPhysical(details.localPosition);
     final target = _controller.hitTest(point, haloMm: _interactionHaloMm);
     if (target == null) {
@@ -432,58 +439,155 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   }
 
   void _onPointerDown(PointerDownEvent event) {
-    if (_creditsVisible ||
-        event.kind != PointerDeviceKind.mouse ||
-        event.buttons != kPrimaryMouseButton) {
-      return;
+  if (_creditsVisible ||
+      event.kind != PointerDeviceKind.mouse ||
+      event.buttons != kPrimaryMouseButton) {
+    return;
+  }
+  final point = _toPhysical(event.localPosition);
+  _mouseTransform = true;
+  _mouseLast = point;
+  _mouseTravelMm = 0;
+  _preciseTarget = _exactHit(point);
+  _transformTarget = _controller.hitTest(
+    point,
+    haloMm: _interactionHaloMm,
+  );
+  _oneFingerStart = point;
+  _oneFingerLast = point;
+  _oneFingerPath
+    ..clear()
+    ..add(point);
+}
+
+void _onPointerMove(PointerMoveEvent event) {
+  if (!_mouseTransform || event.kind != PointerDeviceKind.mouse) return;
+  final current = _toPhysical(event.localPosition);
+  final last = _mouseLast;
+  if (last == null) return;
+  _mouseTravelMm += last.distanceTo(current);
+  _mouseLast = current;
+  _oneFingerLast = current;
+  if (_oneFingerPath.isEmpty ||
+      _oneFingerPath.last.distanceTo(current) >= 0.7) {
+    _oneFingerPath.add(current);
+  }
+}
+
+void _onPointerUp(PointerUpEvent event) {
+  if (!_mouseTransform || event.kind != PointerDeviceKind.mouse) return;
+  final start = _oneFingerStart;
+  final end = _oneFingerLast;
+  final exact = _preciseTarget;
+
+  if (start != null && end != null) {
+    final encircled = _recognizeEncirclement();
+    if (encircled != null) {
+      _controller.toggleIllumination(encircled);
+    } else {
+      final drag = end - start;
+      final displacement = start.distanceTo(end);
+      if (exact != null &&
+          exact.pose == PyramidPose.upright &&
+          displacement >= _minimumLineGestureMm &&
+          !_containsPoint(exact, end)) {
+        _controller.tipOrStand(exact, drag);
+      } else if (exact != null &&
+          exact.pose == PyramidPose.flat &&
+          displacement >= _minimumLineGestureMm &&
+          _crossesFlatBaseEdge(exact, start, end)) {
+        _controller.tipOrStand(exact, drag);
+      } else if (displacement <= _tapTravelMm) {
+        final tapped = _controller.hitTest(
+          start,
+          haloMm: _interactionHaloMm,
+        );
+        setState(() => _selectedId = tapped?.id);
+      }
     }
-    final point = _toPhysical(event.localPosition);
-    final target = _controller.hitTest(point, haloMm: _interactionHaloMm);
-    if (target == null) return;
-    _transformTarget = target;
-    _mouseTransform = true;
-    _mouseLast = point;
-    _mouseTravelMm = 0;
+  }
+
+  _mouseTransform = false;
+  _mouseLast = null;
+  _mouseTravelMm = 0;
+  _clearGesture();
+}
+
+void _onPointerPanZoomStart(PointerPanZoomStartEvent event) {
+  if (!kIsWeb || _creditsVisible) return;
+  final point = _toPhysical(event.localPosition);
+  final target =
+      _controller.hitTest(point, haloMm: _interactionHaloMm) ?? _selected;
+  if (target == null) return;
+  _finishDesktopScrollTransform();
+  _trackpadTransform = true;
+  _trackpadLastRotation = 0;
+  _transformTarget = target;
+  setState(() => _selectedId = target.id);
+  _controller.beginTransform(target);
+}
+
+void _onPointerPanZoomUpdate(PointerPanZoomUpdateEvent event) {
+  if (!_trackpadTransform || !kIsWeb) return;
+  final delta = PhysicalPoint(
+    event.panDelta.dx / widget.logicalPixelsPerMm,
+    event.panDelta.dy / widget.logicalPixelsPerMm,
+  );
+  final rotationDelta = event.rotation - _trackpadLastRotation;
+  _trackpadLastRotation = event.rotation;
+  _controller.transformBy(delta, rotationDelta);
+}
+
+void _onPointerPanZoomEnd(PointerPanZoomEndEvent event) {
+  if (!_trackpadTransform || !kIsWeb) return;
+  _controller.endTransform();
+  _trackpadTransform = false;
+  _trackpadLastRotation = 0;
+  _transformTarget = null;
+}
+
+void _onPointerSignal(PointerSignalEvent event) {
+  if (!kIsWeb ||
+      _creditsVisible ||
+      _trackpadTransform ||
+      event is! PointerScrollEvent) {
+    return;
+  }
+  final point = _toPhysical(event.localPosition);
+  final target =
+      _controller.hitTest(point, haloMm: _interactionHaloMm) ?? _selected;
+  if (target == null) return;
+
+  if (!_desktopScrollTransform || _desktopScrollTarget?.id != target.id) {
+    _finishDesktopScrollTransform();
+    _desktopScrollTransform = true;
+    _desktopScrollTarget = target;
+    setState(() => _selectedId = target.id);
     _controller.beginTransform(target);
   }
 
-  void _onPointerMove(PointerMoveEvent event) {
-    if (!_mouseTransform || event.kind != PointerDeviceKind.mouse) return;
-    final current = _toPhysical(event.localPosition);
-    final last = _mouseLast;
-    if (last == null) return;
-    final delta = current - last;
-    _mouseTravelMm += last.distanceTo(current);
-    _mouseLast = current;
+  final delta = PhysicalPoint(
+    -event.scrollDelta.dx / widget.logicalPixelsPerMm,
+    -event.scrollDelta.dy / widget.logicalPixelsPerMm,
+  );
+  _controller.transformBy(delta, 0);
+  _desktopScrollEndTimer?.cancel();
+  _desktopScrollEndTimer = Timer(
+    const Duration(milliseconds: 180),
+    _finishDesktopScrollTransform,
+  );
+}
 
-    final keyboard = HardwareKeyboard.instance;
-    final shift =
-        keyboard.isLogicalKeyPressed(LogicalKeyboardKey.shiftLeft) ||
-        keyboard.isLogicalKeyPressed(LogicalKeyboardKey.shiftRight);
-    if (shift) {
-      _controller.transformBy(
-        PhysicalPoint.zero,
-        event.delta.dx * math.pi / 360,
-      );
-    } else {
-      _controller.transformBy(delta, 0);
-    }
-  }
+void _finishDesktopScrollTransform() {
+  _desktopScrollEndTimer?.cancel();
+  _desktopScrollEndTimer = null;
+  if (!_desktopScrollTransform) return;
+  _controller.endTransform();
+  _desktopScrollTransform = false;
+  _desktopScrollTarget = null;
+}
 
-  void _onPointerUp(PointerUpEvent event) {
-    if (!_mouseTransform || event.kind != PointerDeviceKind.mouse) return;
-    final target = _transformTarget;
-    _controller.endTransform();
-    if (target != null && _mouseTravelMm <= _tapTravelMm) {
-      setState(() => _selectedId = target.id);
-    }
-    _mouseTransform = false;
-    _mouseLast = null;
-    _mouseTravelMm = 0;
-    _transformTarget = null;
-  }
-
-  void _onPointerCancel(PointerCancelEvent event) {
+void _onPointerCancel(PointerCancelEvent event) {
     _controller.cancelTransform();
     _mouseTransform = false;
     _mouseLast = null;
@@ -970,6 +1074,10 @@ class _BoardScreenNextState extends State<BoardScreenNext>
               onPointerMove: _onPointerMove,
               onPointerUp: _onPointerUp,
               onPointerCancel: _onPointerCancel,
+              onPointerSignal: _onPointerSignal,
+              onPointerPanZoomStart: _onPointerPanZoomStart,
+              onPointerPanZoomUpdate: _onPointerPanZoomUpdate,
+              onPointerPanZoomEnd: _onPointerPanZoomEnd,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onDoubleTapDown: _handleDoubleTapDown,
