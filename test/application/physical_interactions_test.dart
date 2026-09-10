@@ -29,7 +29,9 @@ void main() {
       position: const PhysicalPoint(40, 40),
       illumination: IlluminationPattern.wall,
     );
-    final controller = BoardController(initialState: BoardState(elements: [wall]));
+    final controller = BoardController(
+      initialState: BoardState(elements: [wall]),
+    );
 
     controller.tipOrStand(wall, const PhysicalPoint(10, 0));
     final tipped = controller.state.elementById('wall')!;
@@ -63,7 +65,10 @@ void main() {
     controller.transformBy(const PhysicalPoint(10, 0), 0);
 
     expect(controller.state.elementById('moving')!.position.xMm, 10);
-    expect(controller.state.elementById('obstacle')!.position.xMm, greaterThan(20));
+    expect(
+      controller.state.elementById('obstacle')!.position.xMm,
+      greaterThan(20),
+    );
   });
 
   test('overlapping different wall-only squares automatically nest', () {
@@ -91,7 +96,13 @@ void main() {
     final structure = controller.state.structures.single;
     expect(structure.kind, StructureKind.nest);
     expect(structure.memberIds.toSet(), {'large', 'small'});
-    expect(controller.state.elementById('large')!.position, const PhysicalPoint(50, 50));
-    expect(controller.state.elementById('small')!.position, const PhysicalPoint(50, 50));
+    expect(
+      controller.state.elementById('large')!.position,
+      const PhysicalPoint(50, 50),
+    );
+    expect(
+      controller.state.elementById('small')!.position,
+      const PhysicalPoint(50, 50),
+    );
   });
 }
