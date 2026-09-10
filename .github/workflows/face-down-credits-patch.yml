@@ -1,0 +1,85 @@
+name: Apply face-down-only credits patch
+
+on:
+  push:
+    branches:
+      - lighthouse-2-rewrite
+    paths:
+      - .github/workflows/face-down-credits-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: lighthouse-2-rewrite
+      - name: Make credits visible only while face-down
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('lib/ui/board_screen_next.dart')
+          text = path.read_text()
+
+          old = """    if (!faceDown) {
+              _faceDownTimer?.cancel();
+              _faceDownTimer = null;
+              _faceDownLatched = false;
+              return;
+            }
+          """
+          new = """    if (!faceDown) {
+              _faceDownTimer?.cancel();
+              _faceDownTimer = null;
+              _faceDownLatched = false;
+              if (_creditsVisible && mounted) {
+                setState(() => _creditsVisible = false);
+              }
+              return;
+            }
+          """
+          if old not in text:
+              raise SystemExit('face-down handler block not found')
+          text = text.replace(old, new, 1)
+
+          old = """        SubmenuButton(
+              menuChildren: [
+                MenuItemButton(
+                  onPressed: () => setState(() => _creditsVisible = true),
+                  child: const Text('Credits'),
+                ),
+              ],
+              child: const Text('About'),
+            ),
+          """
+          if old not in text:
+              raise SystemExit('About/Credits menu block not found')
+          text = text.replace(old, '', 1)
+
+          old = """    onTap: () => setState(() => _creditsVisible = false),
+          """
+          if old not in text:
+              raise SystemExit('credits tap handler not found')
+          text = text.replace(old, "    onTap: null,\n", 1)
+
+          old = """                  'Turn the device face-down to reveal this screen.\\nTap anywhere to return.',
+          """
+          new = """                  'Keep the device face-down to view this screen.\\nTurn it face-up to return.',
+          """
+          if old not in text:
+              raise SystemExit('credits instruction text not found')
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/ui/board_screen_next.dart
+          git commit -m "fix: show credits only while device is face-down"
+          git push origin HEAD:lighthouse-2-rewrite
