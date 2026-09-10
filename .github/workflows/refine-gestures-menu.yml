@@ -1,0 +1,193 @@
+name: Apply gesture and menu refinements
+
+on:
+  push:
+    branches:
+      - lighthouse-2-rewrite
+    paths:
+      - .github/workflows/refine-gestures-menu.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: lighthouse-2-rewrite
+      - name: Refine standing gesture and menus
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('lib/ui/board_screen_next.dart')
+          text = path.read_text()
+
+          old = """    if (exact != null &&
+                exact.pose == PyramidPose.flat &&
+                _isPointToBaseGesture(exact, start, end)) {
+              // Stand: sweep from the triangle's point toward its base, within the
+              // actual triangle. No interaction halo participates in recognition.
+              _controller.tipOrStand(exact, drag);
+              HapticFeedback.mediumImpact();
+              _clearGesture();
+              return;
+            }
+          """
+          new = """    if (exact != null &&
+                exact.pose == PyramidPose.flat &&
+                displacement >= _minimumLineGestureMm &&
+                _crossesFlatBaseEdge(exact, start, end)) {
+              // Stand: begin inside the actual triangle and cross its short base
+              // edge. This mirrors tipping: inside-to-outside, with no halo.
+              _controller.tipOrStand(exact, drag);
+              HapticFeedback.mediumImpact();
+              _clearGesture();
+              return;
+            }
+          """
+          if old not in text:
+              raise SystemExit('standing gesture call block not found')
+          text = text.replace(old, new, 1)
+
+          old = """  bool _isPointToBaseGesture(
+              LightElement triangle,
+              PhysicalPoint start,
+              PhysicalPoint end,
+            ) {
+              if (!_containsPoint(triangle, start) || !_containsPoint(triangle, end)) {
+                return false;
+              }
+              final localStart = rotateVector(
+                start - triangle.position,
+                -triangle.headingDegrees,
+              );
+              final localEnd = rotateVector(
+                end - triangle.position,
+                -triangle.headingDegrees,
+              );
+              final length = _controller.geometry.flatLengthMm(triangle.size);
+              final travel = localEnd.yMm - localStart.yMm;
+              return localStart.yMm < -length * 0.08 &&
+                  localEnd.yMm > length * 0.08 &&
+                  travel >= math.max(4, length * 0.28) &&
+                  localEnd.xMm.abs() <= travel;
+            }
+          """
+          new = """  bool _crossesFlatBaseEdge(
+              LightElement triangle,
+              PhysicalPoint start,
+              PhysicalPoint end,
+            ) {
+              if (!_containsPoint(triangle, start) || _containsPoint(triangle, end)) {
+                return false;
+              }
+              final localStart = rotateVector(
+                start - triangle.position,
+                -triangle.headingDegrees,
+              );
+              final localEnd = rotateVector(
+                end - triangle.position,
+                -triangle.headingDegrees,
+              );
+              final halfLength =
+                  _controller.geometry.flatLengthMm(triangle.size) / 2;
+              final halfBase = _controller.geometry.baseMm(triangle.size) / 2;
+              final deltaY = localEnd.yMm - localStart.yMm;
+              if (deltaY <= 0 || localEnd.yMm <= halfLength) return false;
+
+              final crossing = (halfLength - localStart.yMm) / deltaY;
+              if (crossing <= 0 || crossing >= 1) return false;
+              final xAtBase =
+                  localStart.xMm + (localEnd.xMm - localStart.xMm) * crossing;
+              return xAtBase.abs() <= halfBase;
+            }
+          """
+          if old not in text:
+              raise SystemExit('standing gesture helper not found')
+          text = text.replace(old, new, 1)
+
+          old = """            MenuItemButton(
+                      onPressed: null,
+                      child: Text('Current: ${_controller.state.title}'),
+                    ),
+          """
+          new = """            MenuItemButton(
+                      onPressed: null,
+                      child: Text(_controller.state.title),
+                    ),
+          """
+          if old not in text:
+              raise SystemExit('Current board label not found')
+          text = text.replace(old, new, 1)
+
+          old = """            MenuItemButton(
+                      onPressed: _controller.canUndo ? _controller.undo : null,
+                      child: const Text('Undo'),
+                    ),
+                    MenuItemButton(
+                      onPressed: _controller.canRedo ? _controller.redo : null,
+                      child: const Text('Redo'),
+                    ),
+          """
+          new = """            MenuItemButton(
+                      closeOnActivate: false,
+                      onPressed: _controller.canUndo ? _controller.undo : null,
+                      child: const Text('Undo'),
+                    ),
+                    MenuItemButton(
+                      closeOnActivate: false,
+                      onPressed: _controller.canRedo ? _controller.redo : null,
+                      child: const Text('Redo'),
+                    ),
+          """
+          if old not in text:
+              raise SystemExit('Undo/redo block not found')
+          text = text.replace(old, new, 1)
+
+          submenu = """        SubmenuButton(
+              menuChildren:"""
+          count = text.count(submenu)
+          if count < 5:
+              raise SystemExit(f'expected top-level submenus, found {count}')
+          text = text.replace(
+              submenu,
+              """        SubmenuButton(
+              submenuIcon: const WidgetStatePropertyAll<Widget?>(
+                SizedBox.shrink(),
+              ),
+              menuChildren:""",
+          )
+
+          old = """          width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white70, width: 1.1),
+                  ),
+          """
+          new = """          width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white70, width: 0.55),
+                  ),
+          """
+          if old not in text:
+              raise SystemExit('menu circle block not found')
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+      - name: Format and test
+        run: |
+          dart format lib/ui/board_screen_next.dart
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/ui/board_screen_next.dart
+          git commit -m "refine standing gesture and board menus"
+          git push origin HEAD:lighthouse-2-rewrite
