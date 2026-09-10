@@ -5,7 +5,7 @@ on:
     branches:
       - lighthouse-2-rewrite
     paths:
-      - .github/workflows/face-down-credits-patch.yml
+      - .face-down-credits-patch-trigger
 
 permissions:
   contents: write
