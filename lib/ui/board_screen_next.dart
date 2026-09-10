@@ -74,6 +74,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   Timer? _faceDownTimer;
   bool _faceDownLatched = false;
   bool _creditsVisible = false;
+  bool _instructionsVisible = false;
 
   @override
   void initState() {
@@ -969,6 +970,10 @@ class _BoardScreenNextState extends State<BoardScreenNext>
           ],
           child: const Text('Display'),
         ),
+        MenuItemButton(
+          onPressed: () => setState(() => _instructionsVisible = true),
+          child: const Text('Instructions'),
+        ),
         SubmenuButton(
           submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
           menuChildren: [
@@ -999,6 +1004,101 @@ class _BoardScreenNextState extends State<BoardScreenNext>
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white70, width: 0.55),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _instructionsPane() {
+    final desktop = kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.macOS ||
+            defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.linux);
+
+    final instructions = desktop
+        ? const [
+            ('Create / resize / delete', 'Double-click'),
+            ('Select', 'Click'),
+            ('Tip / stand', 'Click-drag across the footprint edge'),
+            ('Light full / walls', 'Draw a loop around an upright footprint'),
+            ('Move', 'Two-finger scroll over a footprint'),
+            ('Rotate', 'Not available in Safari yet'),
+          ]
+        : const [
+            ('Create / resize / delete', 'Double-tap'),
+            ('Select', 'Tap'),
+            ('Tip / stand', 'Drag from inside across the footprint edge'),
+            ('Light full / walls', 'Draw a loop around an upright footprint'),
+            ('Move + rotate', 'Two fingers: drag and twist'),
+          ];
+
+    return SafeArea(
+      child: Align(
+        alignment: Alignment.topRight,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Material(
+            color: const Color(0xEE171717),
+            elevation: 8,
+            borderRadius: BorderRadius.circular(12),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 340),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 8, 14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Instructions',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Close instructions',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () =>
+                              setState(() => _instructionsVisible = false),
+                          icon: const Icon(Icons.close, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    for (final item in instructions)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 7),
+                        child: Text.rich(
+                          TextSpan(
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                              height: 1.25,
+                            ),
+                            children: [
+                              TextSpan(
+                                text: '${item.$1}: ',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              TextSpan(text: item.$2),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -1096,6 +1196,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
               child: Padding(padding: const EdgeInsets.all(8), child: _menu()),
             ),
           ),
+          if (_instructionsVisible) _instructionsPane(),
           if (_creditsVisible) Positioned.fill(child: _credits()),
         ],
       ),
