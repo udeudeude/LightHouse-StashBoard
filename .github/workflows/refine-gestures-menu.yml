@@ -24,5 +24,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add lib/ui/board_screen_next.dart
-          git commit -m "refine standing gesture and board menus"
+          git commit -m "refine Display menu wording"
           git push origin HEAD:lighthouse-2-rewrite
+
+# display wording pass
