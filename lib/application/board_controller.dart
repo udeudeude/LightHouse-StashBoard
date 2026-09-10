@@ -99,7 +99,6 @@ class BoardController extends ChangeNotifier {
             current.position.yMm + uy * hingeTravel,
           ),
           headingDegrees: normalizeDegrees(dragAngle + 90),
-          illumination: IlluminationPattern.full,
         ),
       );
       return;
@@ -155,18 +154,34 @@ class BoardController extends ChangeNotifier {
     }
     if (replacements.isEmpty) return;
     _state = _state.replaceMany(replacements);
+    // Resolve contact continuously so pushing is visible while dragging rather
+    // than appearing only after the fingers leave the glass.
+    _state = _resolvePushes(_state, _transformingIds);
     notifyListeners();
   }
 
   void endTransform() {
     final before = _transformBeforeState;
-    final movingIds = _transformingIds;
+    var movingIds = _transformingIds;
     _transformBeforeState = null;
     _transformingIds = const {};
     if (before == null || movingIds.isEmpty) return;
 
     _state = _resolvePushes(_state, movingIds);
-    if (identical(before, _state)) return;
+    _state = _snapWallOverlaps(_state, movingIds);
+
+    // If an automatic nest absorbed the moved element, the completed command
+    // includes the whole resulting structure.
+    final expanded = <String>{...movingIds};
+    for (final id in movingIds) {
+      final element = _state.elementById(id);
+      if (element == null) continue;
+      final structure = _state.structureForElement(element.id);
+      if (structure != null) expanded.addAll(structure.memberIds);
+    }
+    movingIds = expanded;
+
+    if (before == _state) return;
     _undoStack.add(ReplaceBoardStateCommand(before: before, after: _state));
     _redoStack.clear();
     notifyListeners();
@@ -312,37 +327,145 @@ class BoardController extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _isAutomaticNestPair(LightElement a, LightElement b) {
+    if (a.id == b.id ||
+        a.pose != PyramidPose.upright ||
+        b.pose != PyramidPose.upright ||
+        a.illumination != IlluminationPattern.wall ||
+        b.illumination != IlluminationPattern.wall ||
+        a.size == b.size) {
+      return false;
+    }
+    final aStructure = _state.structureForElement(a.id);
+    final bStructure = _state.structureForElement(b.id);
+    return aStructure == null ||
+        bStructure == null ||
+        aStructure.id != bStructure.id;
+  }
+
   BoardState _resolvePushes(BoardState initial, Set<String> movingIds) {
     var result = initial;
-    final movedElements = movingIds
-        .map(result.elementById)
-        .whereType<LightElement>()
-        .toList();
+    final activeIds = <String>{...movingIds};
 
-    for (final moving in movedElements) {
-      for (final stationary in result.elements.toList()) {
-        if (movingIds.contains(stationary.id) ||
-            moving.size != stationary.size) {
-          continue;
-        }
-        final separation = minimumSeparationVector(
-          polygonForElement(moving, geometry),
-          polygonForElement(stationary, geometry),
-        );
-        if (separation == null) continue;
+    // Treat a pushed object as another moving object so contact can propagate
+    // through a row of pieces. The pass limit is a guard against degenerate
+    // arrangements, not a physical approximation.
+    for (var pass = 0; pass < 48; pass += 1) {
+      var changed = false;
 
-        final stationaryStructure = result.structureForElement(stationary.id);
-        final pushedIds = stationaryStructure?.memberIds ?? [stationary.id];
-        final replacements = <LightElement>[];
-        for (final id in pushedIds) {
-          final member = result.elementById(id);
-          if (member == null) continue;
-          replacements.add(
-            member.copyWith(position: member.position + separation),
+      outer:
+      for (final movingId in activeIds.toList()) {
+        final moving = result.elementById(movingId);
+        if (moving == null) continue;
+
+        for (final stationary in result.elements.toList()) {
+          if (activeIds.contains(stationary.id)) continue;
+
+          // Two different-size wall-only upright footprints are allowed to
+          // overlap during the drag because release will turn the overlap into
+          // a perfectly aligned nest.
+          if (_isAutomaticNestPair(moving, stationary)) continue;
+
+          final separation = minimumSeparationVector(
+            polygonForElement(moving, geometry),
+            polygonForElement(stationary, geometry),
           );
+          if (separation == null) continue;
+
+          final stationaryStructure = result.structureForElement(stationary.id);
+          final pushedIds = stationaryStructure?.memberIds ?? [stationary.id];
+          final replacements = <LightElement>[];
+          for (final id in pushedIds) {
+            final member = result.elementById(id);
+            if (member == null) continue;
+            replacements.add(
+              member.copyWith(position: member.position + separation),
+            );
+          }
+          if (replacements.isEmpty) continue;
+          result = result.replaceMany(replacements);
+          activeIds.addAll(pushedIds);
+          changed = true;
+          break outer;
         }
-        result = result.replaceMany(replacements);
       }
+
+      if (!changed) break;
+    }
+    return result;
+  }
+
+  BoardState _snapWallOverlaps(BoardState initial, Set<String> movingIds) {
+    var result = initial;
+    final moved = <String>{...movingIds};
+
+    for (var pass = 0; pass < 8; pass += 1) {
+      var snapped = false;
+
+      outer:
+      for (final movingId in moved.toList()) {
+        final moving = result.elementById(movingId);
+        if (moving == null) continue;
+
+        for (final candidate in result.elements.toList()) {
+          if (moved.contains(candidate.id) ||
+              !_isAutomaticNestPair(moving, candidate)) {
+            continue;
+          }
+          final overlap = minimumSeparationVector(
+            polygonForElement(moving, geometry),
+            polygonForElement(candidate, geometry),
+          );
+          if (overlap == null) continue;
+
+          final movingStructure = result.structureForElement(moving.id);
+          final targetStructure = result.structureForElement(candidate.id);
+          final movingMembers = movingStructure?.memberIds.toSet() ?? {moving.id};
+          final targetMembers = targetStructure?.memberIds.toSet() ?? {
+            candidate.id,
+          };
+          final combinedIds = {...movingMembers, ...targetMembers};
+          final combined = combinedIds
+              .map(result.elementById)
+              .whereType<LightElement>()
+              .toList();
+          final sizes = combined.map((member) => member.size).toSet();
+          if (sizes.length != combined.length) continue;
+
+          combined.sort((a, b) => b.size.index.compareTo(a.size.index));
+          final anchor = combined.first;
+
+          if (movingStructure != null) {
+            result = result.removeStructure(movingStructure.id);
+          }
+          if (targetStructure != null &&
+              targetStructure.id != movingStructure?.id) {
+            result = result.removeStructure(targetStructure.id);
+          }
+
+          result = result.replaceMany([
+            for (final member in combined)
+              member.copyWith(
+                position: anchor.position,
+                headingDegrees: anchor.headingDegrees,
+              ),
+          ]);
+          final structure = LightStructure(
+            id:
+                targetStructure?.id ??
+                movingStructure?.id ??
+                'structure-${_newId()}',
+            kind: StructureKind.nest,
+            memberIds: [for (final member in combined) member.id],
+          );
+          result = result.upsertStructure(structure);
+          moved.addAll(structure.memberIds);
+          snapped = true;
+          break outer;
+        }
+      }
+
+      if (!snapped) break;
     }
     return result;
   }
