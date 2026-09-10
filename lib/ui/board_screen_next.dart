@@ -1011,7 +1011,8 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   }
 
   Widget _instructionsPane() {
-    final desktop = kIsWeb &&
+    final desktop =
+        kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.macOS ||
             defaultTargetPlatform == TargetPlatform.windows ||
             defaultTargetPlatform == TargetPlatform.linux);
