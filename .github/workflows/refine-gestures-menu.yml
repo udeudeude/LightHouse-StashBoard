@@ -21,169 +21,127 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('lib/ui/board_screen_next.dart')
           text = path.read_text()
 
           old = """    if (exact != null &&
-                exact.pose == PyramidPose.flat &&
-                _isPointToBaseGesture(exact, start, end)) {
-              // Stand: sweep from the triangle's point toward its base, within the
-              // actual triangle. No interaction halo participates in recognition.
-              _controller.tipOrStand(exact, drag);
-              HapticFeedback.mediumImpact();
-              _clearGesture();
-              return;
-            }
+              exact.pose == PyramidPose.flat &&
+              _isPointToBaseGesture(exact, start, end)) {
+            // Stand: sweep from the triangle's point toward its base, within the
+            // actual triangle. No interaction halo participates in recognition.
+            _controller.tipOrStand(exact, drag);
+            HapticFeedback.mediumImpact();
+            _clearGesture();
+            return;
+          }
           """
           new = """    if (exact != null &&
-                exact.pose == PyramidPose.flat &&
-                displacement >= _minimumLineGestureMm &&
-                _crossesFlatBaseEdge(exact, start, end)) {
-              // Stand: begin inside the actual triangle and cross its short base
-              // edge. This mirrors tipping: inside-to-outside, with no halo.
-              _controller.tipOrStand(exact, drag);
-              HapticFeedback.mediumImpact();
-              _clearGesture();
-              return;
-            }
+              exact.pose == PyramidPose.flat &&
+              displacement >= _minimumLineGestureMm &&
+              _crossesFlatBaseEdge(exact, start, end)) {
+            // Stand: begin inside the actual triangle and cross its short base
+            // edge. This mirrors tipping: inside-to-outside, with no halo.
+            _controller.tipOrStand(exact, drag);
+            HapticFeedback.mediumImpact();
+            _clearGesture();
+            return;
+          }
           """
           if old not in text:
               raise SystemExit('standing gesture call block not found')
           text = text.replace(old, new, 1)
 
-          old = """  bool _isPointToBaseGesture(
-              LightElement triangle,
-              PhysicalPoint start,
-              PhysicalPoint end,
-            ) {
-              if (!_containsPoint(triangle, start) || !_containsPoint(triangle, end)) {
-                return false;
-              }
-              final localStart = rotateVector(
-                start - triangle.position,
-                -triangle.headingDegrees,
-              );
-              final localEnd = rotateVector(
-                end - triangle.position,
-                -triangle.headingDegrees,
-              );
-              final length = _controller.geometry.flatLengthMm(triangle.size);
-              final travel = localEnd.yMm - localStart.yMm;
-              return localStart.yMm < -length * 0.08 &&
-                  localEnd.yMm > length * 0.08 &&
-                  travel >= math.max(4, length * 0.28) &&
-                  localEnd.xMm.abs() <= travel;
+          helper_pattern = re.compile(
+              r"  bool _isPointToBaseGesture\(.*?\n  LightElement\? _recognizeEncirclement\(\) \{",
+              re.S,
+          )
+          helper_replacement = """  bool _crossesFlatBaseEdge(
+            LightElement triangle,
+            PhysicalPoint start,
+            PhysicalPoint end,
+          ) {
+            if (!_containsPoint(triangle, start) || _containsPoint(triangle, end)) {
+              return false;
             }
-          """
-          new = """  bool _crossesFlatBaseEdge(
-              LightElement triangle,
-              PhysicalPoint start,
-              PhysicalPoint end,
-            ) {
-              if (!_containsPoint(triangle, start) || _containsPoint(triangle, end)) {
-                return false;
-              }
-              final localStart = rotateVector(
-                start - triangle.position,
-                -triangle.headingDegrees,
-              );
-              final localEnd = rotateVector(
-                end - triangle.position,
-                -triangle.headingDegrees,
-              );
-              final halfLength =
-                  _controller.geometry.flatLengthMm(triangle.size) / 2;
-              final halfBase = _controller.geometry.baseMm(triangle.size) / 2;
-              final deltaY = localEnd.yMm - localStart.yMm;
-              if (deltaY <= 0 || localEnd.yMm <= halfLength) return false;
+            final localStart = rotateVector(
+              start - triangle.position,
+              -triangle.headingDegrees,
+            );
+            final localEnd = rotateVector(
+              end - triangle.position,
+              -triangle.headingDegrees,
+            );
+            final halfLength =
+                _controller.geometry.flatLengthMm(triangle.size) / 2;
+            final halfBase = _controller.geometry.baseMm(triangle.size) / 2;
+            final deltaY = localEnd.yMm - localStart.yMm;
+            if (deltaY <= 0 || localEnd.yMm <= halfLength) return false;
 
-              final crossing = (halfLength - localStart.yMm) / deltaY;
-              if (crossing <= 0 || crossing >= 1) return false;
-              final xAtBase =
-                  localStart.xMm + (localEnd.xMm - localStart.xMm) * crossing;
-              return xAtBase.abs() <= halfBase;
-            }
-          """
-          if old not in text:
-              raise SystemExit('standing gesture helper not found')
-          text = text.replace(old, new, 1)
+            final crossing = (halfLength - localStart.yMm) / deltaY;
+            if (crossing <= 0 || crossing >= 1) return false;
+            final xAtBase =
+                localStart.xMm + (localEnd.xMm - localStart.xMm) * crossing;
+            return xAtBase.abs() <= halfBase;
+          }
 
-          old = """            MenuItemButton(
-                      onPressed: null,
-                      child: Text('Current: ${_controller.state.title}'),
-                    ),
-          """
-          new = """            MenuItemButton(
-                      onPressed: null,
-                      child: Text(_controller.state.title),
-                    ),
-          """
+          LightElement? _recognizeEncirclement() {"""
+          text, helper_count = helper_pattern.subn(helper_replacement, text, count=1)
+          if helper_count != 1:
+              raise SystemExit(f'standing helper replacement count {helper_count}')
+
+          old = "child: Text('Current: ${_controller.state.title}')"
           if old not in text:
               raise SystemExit('Current board label not found')
-          text = text.replace(old, new, 1)
+          text = text.replace(old, "child: Text(_controller.state.title)", 1)
 
-          old = """            MenuItemButton(
-                      onPressed: _controller.canUndo ? _controller.undo : null,
-                      child: const Text('Undo'),
-                    ),
-                    MenuItemButton(
-                      onPressed: _controller.canRedo ? _controller.redo : null,
-                      child: const Text('Redo'),
-                    ),
-          """
-          new = """            MenuItemButton(
-                      closeOnActivate: false,
-                      onPressed: _controller.canUndo ? _controller.undo : null,
-                      child: const Text('Undo'),
-                    ),
-                    MenuItemButton(
-                      closeOnActivate: false,
-                      onPressed: _controller.canRedo ? _controller.redo : null,
-                      child: const Text('Redo'),
-                    ),
-          """
-          if old not in text:
-              raise SystemExit('Undo/redo block not found')
-          text = text.replace(old, new, 1)
+          undo = "onPressed: _controller.canUndo ? _controller.undo : null,"
+          redo = "onPressed: _controller.canRedo ? _controller.redo : null,"
+          if undo not in text or redo not in text:
+              raise SystemExit('Undo/redo actions not found')
+          text = text.replace(
+              undo,
+              "closeOnActivate: false,\n              " + undo,
+              1,
+          )
+          text = text.replace(
+              redo,
+              "closeOnActivate: false,\n              " + redo,
+              1,
+          )
 
-          submenu = """        SubmenuButton(
-              menuChildren:"""
+          submenu = "        SubmenuButton(\n          menuChildren:"
           count = text.count(submenu)
           if count < 5:
               raise SystemExit(f'expected top-level submenus, found {count}')
           text = text.replace(
               submenu,
               """        SubmenuButton(
-              submenuIcon: const WidgetStatePropertyAll<Widget?>(
-                SizedBox.shrink(),
-              ),
-              menuChildren:""",
+          submenuIcon: const WidgetStatePropertyAll<Widget?>(
+            SizedBox.shrink(),
+          ),
+          menuChildren:""",
           )
 
-          old = """          width: 18,
-                  height: 18,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white70, width: 1.1),
-                  ),
-          """
-          new = """          width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white70, width: 0.55),
-                  ),
-          """
-          if old not in text:
+          circle = """          width: 18,
+          height: 18,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white70, width: 1.1),
+          ),"""
+          circle_new = """          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white70, width: 0.55),
+          ),"""
+          if circle not in text:
               raise SystemExit('menu circle block not found')
-          text = text.replace(old, new, 1)
+          text = text.replace(circle, circle_new, 1)
 
           path.write_text(text)
           PY
-      - name: Format and test
-        run: |
-          dart format lib/ui/board_screen_next.dart
       - name: Commit changes
         run: |
           git config user.name "github-actions[bot]"
