@@ -26,18 +26,16 @@ jobs:
           path = Path('lib/ui/board_screen_next.dart')
           text = path.read_text()
 
-          old = """    if (exact != null &&
-              exact.pose == PyramidPose.flat &&
-              _isPointToBaseGesture(exact, start, end)) {
-            // Stand: sweep from the triangle's point toward its base, within the
-            // actual triangle. No interaction halo participates in recognition.
-            _controller.tipOrStand(exact, drag);
-            HapticFeedback.mediumImpact();
-            _clearGesture();
-            return;
-          }
-          """
-          new = """    if (exact != null &&
+          stand_pattern = re.compile(
+              r"    if \(exact != null &&\n"
+              r"        exact\.pose == PyramidPose\.flat &&\n"
+              r"        _isPointToBaseGesture\(exact, start, end\)\) \{\n"
+              r".*?"
+              r"      return;\n"
+              r"    \}\n",
+              re.S,
+          )
+          stand_replacement = """    if (exact != null &&
               exact.pose == PyramidPose.flat &&
               displacement >= _minimumLineGestureMm &&
               _crossesFlatBaseEdge(exact, start, end)) {
@@ -48,10 +46,10 @@ jobs:
             _clearGesture();
             return;
           }
-          """
-          if old not in text:
-              raise SystemExit('standing gesture call block not found')
-          text = text.replace(old, new, 1)
+"""
+          text, count = stand_pattern.subn(stand_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'standing gesture replacement count {count}')
 
           helper_pattern = re.compile(
               r"  bool _isPointToBaseGesture\(.*?\n  LightElement\? _recognizeEncirclement\(\) \{",
@@ -87,9 +85,9 @@ jobs:
           }
 
           LightElement? _recognizeEncirclement() {"""
-          text, helper_count = helper_pattern.subn(helper_replacement, text, count=1)
-          if helper_count != 1:
-              raise SystemExit(f'standing helper replacement count {helper_count}')
+          text, count = helper_pattern.subn(helper_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'standing helper replacement count {count}')
 
           old = "child: Text('Current: ${_controller.state.title}')"
           if old not in text:
@@ -100,45 +98,41 @@ jobs:
           redo = "onPressed: _controller.canRedo ? _controller.redo : null,"
           if undo not in text or redo not in text:
               raise SystemExit('Undo/redo actions not found')
-          text = text.replace(
-              undo,
-              "closeOnActivate: false,\n              " + undo,
-              1,
-          )
-          text = text.replace(
-              redo,
-              "closeOnActivate: false,\n              " + redo,
-              1,
-          )
+          text = text.replace(undo, "closeOnActivate: false,\n              " + undo, 1)
+          text = text.replace(redo, "closeOnActivate: false,\n              " + redo, 1)
 
-          submenu = "        SubmenuButton(\n          menuChildren:"
-          count = text.count(submenu)
+          submenu_pattern = re.compile(
+              r"^(        )SubmenuButton\(\n(          )menuChildren:",
+              re.M,
+          )
+          submenu_replacement = (
+              "        SubmenuButton(\n"
+              "          submenuIcon: const WidgetStatePropertyAll<Widget?>(\n"
+              "            SizedBox.shrink(),\n"
+              "          ),\n"
+              "          menuChildren:"
+          )
+          text, count = submenu_pattern.subn(submenu_replacement, text)
           if count < 5:
-              raise SystemExit(f'expected top-level submenus, found {count}')
-          text = text.replace(
-              submenu,
-              """        SubmenuButton(
-          submenuIcon: const WidgetStatePropertyAll<Widget?>(
-            SizedBox.shrink(),
-          ),
-          menuChildren:""",
-          )
+              raise SystemExit(f'expected at least 5 top-level submenus, found {count}')
 
-          circle = """          width: 18,
-          height: 18,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white70, width: 1.1),
-          ),"""
-          circle_new = """          width: 36,
+          circle_pattern = re.compile(
+              r"          width: 18,\n"
+              r"          height: 18,\n"
+              r"          decoration: BoxDecoration\(\n"
+              r"            shape: BoxShape\.circle,\n"
+              r"            border: Border\.all\(color: Colors\.white70, width: 1\.1\),\n"
+              r"          \),"
+          )
+          circle_replacement = """          width: 36,
           height: 36,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white70, width: 0.55),
           ),"""
-          if circle not in text:
-              raise SystemExit('menu circle block not found')
-          text = text.replace(circle, circle_new, 1)
+          text, count = circle_pattern.subn(circle_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'menu circle replacement count {count}')
 
           path.write_text(text)
           PY
