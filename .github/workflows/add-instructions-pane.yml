@@ -202,3 +202,5 @@ jobs:
           git add lib/ui/board_screen_next.dart
           git commit -m "ux: add persistent instructions pane"
           git push origin HEAD:lighthouse-2-rewrite
+
+# Trigger after workflow creation.
