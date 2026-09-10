@@ -25,37 +25,40 @@ jobs:
           path = Path('lib/ui/board_screen_next.dart')
           text = path.read_text()
 
-          old = """    if (!faceDown) {
-              _faceDownTimer?.cancel();
-              _faceDownTimer = null;
-              _faceDownLatched = false;
-              return;
-            }
-          """.replace('              ', '      ')
-          new = """    if (!faceDown) {
-              _faceDownTimer?.cancel();
-              _faceDownTimer = null;
-              _faceDownLatched = false;
-              if (_creditsVisible && mounted) {
-                setState(() => _creditsVisible = false);
-              }
-              return;
-            }
-          """.replace('              ', '      ')
+          old = (
+              "    if (!faceDown) {\n"
+              "      _faceDownTimer?.cancel();\n"
+              "      _faceDownTimer = null;\n"
+              "      _faceDownLatched = false;\n"
+              "      return;\n"
+              "    }\n"
+          )
+          new = (
+              "    if (!faceDown) {\n"
+              "      _faceDownTimer?.cancel();\n"
+              "      _faceDownTimer = null;\n"
+              "      _faceDownLatched = false;\n"
+              "      if (_creditsVisible && mounted) {\n"
+              "        setState(() => _creditsVisible = false);\n"
+              "      }\n"
+              "      return;\n"
+              "    }\n"
+          )
           if old not in text:
               raise SystemExit('face-down handler block not found')
           text = text.replace(old, new, 1)
 
-          old = """        SubmenuButton(
-              menuChildren: [
-                MenuItemButton(
-                  onPressed: () => setState(() => _creditsVisible = true),
-                  child: const Text('Credits'),
-                ),
-              ],
-              child: const Text('About'),
-            ),
-          """.replace('              ', '  ')
+          old = (
+              "        SubmenuButton(\n"
+              "          menuChildren: [\n"
+              "            MenuItemButton(\n"
+              "              onPressed: () => setState(() => _creditsVisible = true),\n"
+              "              child: const Text('Credits'),\n"
+              "            ),\n"
+              "          ],\n"
+              "          child: const Text('About'),\n"
+              "        ),\n"
+          )
           if old not in text:
               raise SystemExit('About/Credits menu block not found')
           text = text.replace(old, '', 1)
