@@ -6,6 +6,7 @@ on:
       - lighthouse-2-rewrite
     paths:
       - .github/workflows/add-instructions-pane.yml
+      - .github/instructions-pane-trigger
 
 permissions:
   contents: write
