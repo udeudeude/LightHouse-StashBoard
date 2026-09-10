@@ -28,177 +28,134 @@ jobs:
           path = Path('lib/ui/board_screen_next.dart')
           text = path.read_text()
 
-          if '_instructionsVisible' in text:
-              raise SystemExit(0)
+          if '_instructionsVisible' not in text:
+              marker = '  bool _creditsVisible = false;\n'
+              if marker not in text:
+                  raise SystemExit('credits state marker not found')
+              text = text.replace(marker, marker + '  bool _instructionsVisible = false;\n', 1)
 
-          old = """  bool _faceDownLatched = false;
-          bool _creditsVisible = false;
-          """
-          new = """  bool _faceDownLatched = false;
-          bool _creditsVisible = false;
-          bool _instructionsVisible = false;
-          """
-          if old not in text:
-              raise SystemExit('state insertion point not found')
-          text = text.replace(old, new, 1)
+              export_pos = text.index('onPressed: _exportBoard')
+              submenu_pos = text.rfind('        SubmenuButton(', 0, export_pos)
+              if submenu_pos < 0:
+                  raise SystemExit('transfer submenu not found')
+              menu_item = """        MenuItemButton(
+          onPressed: () => setState(() => _instructionsVisible = true),
+          child: const Text('Instructions'),
+        ),
+"""
+              text = text[:submenu_pos] + menu_item + text[submenu_pos:]
 
-          old = """        SubmenuButton(
-                    submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
-                    menuChildren: [
-                      MenuItemButton(
-                        onPressed: _exportBoard,
-          """
-          new = """        MenuItemButton(
-                    onPressed: () => setState(() => _instructionsVisible = true),
-                    child: const Text('Instructions'),
-                  ),
-                  SubmenuButton(
-                    submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
-                    menuChildren: [
-                      MenuItemButton(
-                        onPressed: _exportBoard,
-          """
-          if old not in text:
-              raise SystemExit('menu insertion point not found')
-          text = text.replace(old, new, 1)
+              credits_marker = '  Widget _credits() => GestureDetector(\n'
+              if credits_marker not in text:
+                  raise SystemExit('credits widget marker not found')
+              pane = """  Widget _instructionsPane() {
+    final desktop = kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.macOS ||
+            defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.linux);
 
-          old = """  Widget _credits() => GestureDetector(
-          """
-          new = """  Widget _instructionsPane() {
-            final desktop = kIsWeb &&
-                (defaultTargetPlatform == TargetPlatform.macOS ||
-                    defaultTargetPlatform == TargetPlatform.windows ||
-                    defaultTargetPlatform == TargetPlatform.linux);
+    final instructions = desktop
+        ? const [
+            ('Create / resize / delete', 'Double-click'),
+            ('Select', 'Click'),
+            ('Tip / stand', 'Click-drag across the footprint edge'),
+            ('Light full / walls', 'Draw a loop around an upright footprint'),
+            ('Move', 'Two-finger scroll over a footprint'),
+            ('Rotate', 'Not available in Safari yet'),
+          ]
+        : const [
+            ('Create / resize / delete', 'Double-tap'),
+            ('Select', 'Tap'),
+            ('Tip / stand', 'Drag from inside across the footprint edge'),
+            ('Light full / walls', 'Draw a loop around an upright footprint'),
+            ('Move + rotate', 'Two fingers: drag and twist'),
+          ];
 
-            final instructions = desktop
-                ? const [
-                    ('Create / resize / delete', 'Double-click'),
-                    ('Select', 'Click'),
-                    ('Tip / stand', 'Click-drag across the footprint edge'),
-                    ('Light full / walls', 'Draw a loop around an upright footprint'),
-                    ('Move', 'Two-finger scroll over a footprint'),
-                    ('Rotate', 'Two-finger twist, when the browser exposes it'),
-                  ]
-                : const [
-                    ('Create / resize / delete', 'Double-tap'),
-                    ('Select', 'Tap'),
-                    ('Tip / stand', 'Drag from inside across the footprint edge'),
-                    ('Light full / walls', 'Draw a loop around an upright footprint'),
-                    ('Move + rotate', 'Two fingers: drag and twist'),
-                  ];
-
-            return SafeArea(
-              child: Align(
-                alignment: Alignment.topRight,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Material(
-                    color: const Color(0xEE171717),
-                    elevation: 8,
-                    borderRadius: BorderRadius.circular(12),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 340),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 10, 8, 14),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Expanded(
-                                  child: Text(
-                                    'Instructions',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Close instructions',
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () =>
-                                      setState(() => _instructionsVisible = false),
-                                  icon: const Icon(Icons.close, color: Colors.white70),
-                                ),
-                              ],
+    return SafeArea(
+      child: Align(
+        alignment: Alignment.topRight,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Material(
+            color: const Color(0xEE171717),
+            elevation: 8,
+            borderRadius: BorderRadius.circular(12),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 340),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 8, 14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Instructions',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
                             ),
-                            const SizedBox(height: 4),
-                            for (final item in instructions)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 7),
-                                child: Text.rich(
-                                  TextSpan(
-                                    style: const TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 13,
-                                      height: 1.25,
-                                    ),
-                                    children: [
-                                      TextSpan(
-                                        text: '${item.$1}: ',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      TextSpan(text: item.$2),
-                                    ],
-                                  ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Close instructions',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () =>
+                              setState(() => _instructionsVisible = false),
+                          icon: const Icon(Icons.close, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    for (final item in instructions)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 7),
+                        child: Text.rich(
+                          TextSpan(
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                              height: 1.25,
+                            ),
+                            children: [
+                              TextSpan(
+                                text: '${item.$1}: ',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                            if (desktop)
-                              const Padding(
-                                padding: EdgeInsets.only(top: 3),
-                                child: Text(
-                                  'Safari may not expose trackpad twist rotation.',
-                                  style: TextStyle(
-                                    color: Colors.white54,
-                                    fontSize: 12,
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                ),
-                              ),
-                          ],
+                              TextSpan(text: item.$2),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ),
+                  ],
                 ),
               ),
-            );
-          }
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
-          Widget _credits() => GestureDetector(
-          """
-          if old not in text:
-              raise SystemExit('widget insertion point not found')
-          text = text.replace(old, new, 1)
+"""
+              text = text.replace(credits_marker, pane + credits_marker, 1)
 
-          old = """          SafeArea(
-                    child: Align(
-                      alignment: Alignment.bottomRight,
-                      child: Padding(padding: const EdgeInsets.all(8), child: _menu()),
-                    ),
-                  ),
-                  if (_creditsVisible) Positioned.fill(child: _credits()),
-          """
-          new = """          SafeArea(
-                    child: Align(
-                      alignment: Alignment.bottomRight,
-                      child: Padding(padding: const EdgeInsets.all(8), child: _menu()),
-                    ),
-                  ),
-                  if (_instructionsVisible) _instructionsPane(),
-                  if (_creditsVisible) Positioned.fill(child: _credits()),
-          """
-          if old not in text:
-              raise SystemExit('stack insertion point not found')
-          text = text.replace(old, new, 1)
+              stack_marker = '          if (_creditsVisible) Positioned.fill(child: _credits()),\n'
+              if stack_marker not in text:
+                  raise SystemExit('credits stack marker not found')
+              text = text.replace(
+                  stack_marker,
+                  '          if (_instructionsVisible) _instructionsPane(),\n' + stack_marker,
+                  1,
+              )
 
-          path.write_text(text)
+              path.write_text(text)
           PY
       - name: Format Dart
         run: dart format lib test
