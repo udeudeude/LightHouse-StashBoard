@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.1 - 2026-09-09
+
+Physical interaction refinement from hands-on testing.
+
+### Changed
+
+- collision pushing now resolves continuously while dragging so contact is visible
+- wall-only illumination is preserved when a footprint is tipped and stood again
+- tipping now uses an exact inside-square to outside-square line rather than an interaction halo
+- standing now uses point-to-base travel within the actual flat triangle
+- replaced scribble illumination switching with tolerant encirclement detection around an upright footprint
+- overlapping different-size wall-only upright footprints automatically align as a nest, anchored to the largest member
+- removed the separate snap, ruler, board-title, undo, and redo controls from the board surface
+- replaced the ellipsis control with a thin hollow-circle menu control
+- reorganized commands into Board, Edit, Structure, Display, Transfer, and About submenus
+- locked the active board to one exact display orientation
+- added a face-down device gesture that reveals credits on supported native devices
+
+### Tested
+
+- added regression tests for preserved wall illumination, live collision pushing, and automatic wall-only nesting
+
 ## 0.3.0 - 2026-09-08
 
 Major LightHouse 2 development milestone.
