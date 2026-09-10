@@ -707,7 +707,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     final recalibrate = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Verify physical size'),
+        title: const Text('Size'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -748,7 +748,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     await showDialog<void>(
       context: context,
       builder: (context) => const AlertDialog(
-        title: Text('Install LightHouse'),
+        title: Text('Full-screen'),
         content: Text(
           'On iPhone or iPad, open this site in Safari, tap Share, then Add to Home Screen. On desktop browsers, use the browser install-app command when offered.',
         ),
@@ -857,11 +857,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
           menuChildren: [
             MenuItemButton(
               onPressed: _showCalibrationCheck,
-              child: const Text('Verify physical size'),
-            ),
-            MenuItemButton(
-              onPressed: widget.onRecalibrate,
-              child: const Text('Recalibrate'),
+              child: const Text('Size'),
             ),
             MenuItemButton(
               onPressed: _showBrightnessDialog,
@@ -870,7 +866,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
             if (kIsWeb)
               MenuItemButton(
                 onPressed: _showWebInstallHelp,
-                child: const Text('Install / full-screen help'),
+                child: const Text('Full-screen'),
               ),
           ],
           child: const Text('Display'),
