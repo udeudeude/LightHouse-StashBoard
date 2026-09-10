@@ -368,8 +368,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
 
     final crossing = (halfLength - localStart.yMm) / deltaY;
     if (crossing <= 0 || crossing >= 1) return false;
-    final xAtBase =
-        localStart.xMm + (localEnd.xMm - localStart.xMm) * crossing;
+    final xAtBase = localStart.xMm + (localEnd.xMm - localStart.xMm) * crossing;
     return xAtBase.abs() <= halfBase;
   }
 
