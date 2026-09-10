@@ -31,7 +31,7 @@ jobs:
               _faceDownLatched = false;
               return;
             }
-          """
+          """.replace('              ', '      ')
           new = """    if (!faceDown) {
               _faceDownTimer?.cancel();
               _faceDownTimer = null;
@@ -41,7 +41,7 @@ jobs:
               }
               return;
             }
-          """
+          """.replace('              ', '      ')
           if old not in text:
               raise SystemExit('face-down handler block not found')
           text = text.replace(old, new, 1)
@@ -55,21 +55,18 @@ jobs:
               ],
               child: const Text('About'),
             ),
-          """
+          """.replace('              ', '  ')
           if old not in text:
               raise SystemExit('About/Credits menu block not found')
           text = text.replace(old, '', 1)
 
-          old = """    onTap: () => setState(() => _creditsVisible = false),
-          """
+          old = "    onTap: () => setState(() => _creditsVisible = false),\n"
           if old not in text:
               raise SystemExit('credits tap handler not found')
           text = text.replace(old, "    onTap: null,\n", 1)
 
-          old = """                  'Turn the device face-down to reveal this screen.\\nTap anywhere to return.',
-          """
-          new = """                  'Keep the device face-down to view this screen.\\nTurn it face-up to return.',
-          """
+          old = "                  'Turn the device face-down to reveal this screen.\\nTap anywhere to return.',"
+          new = "                  'Keep the device face-down to view this screen.\\nTurn it face-up to return.',"
           if old not in text:
               raise SystemExit('credits instruction text not found')
           text = text.replace(old, new, 1)
