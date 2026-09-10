@@ -420,10 +420,10 @@ class BoardController extends ChangeNotifier {
 
           final movingStructure = result.structureForElement(moving.id);
           final targetStructure = result.structureForElement(candidate.id);
-          final movingMembers = movingStructure?.memberIds.toSet() ?? {moving.id};
-          final targetMembers = targetStructure?.memberIds.toSet() ?? {
-            candidate.id,
-          };
+          final movingMembers =
+              movingStructure?.memberIds.toSet() ?? {moving.id};
+          final targetMembers =
+              targetStructure?.memberIds.toSet() ?? {candidate.id};
           final combinedIds = {...movingMembers, ...targetMembers};
           final combined = combinedIds
               .map(result.elementById)
