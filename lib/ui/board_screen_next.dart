@@ -59,7 +59,6 @@ class _BoardScreenNextState extends State<BoardScreenNext>
 
   bool _mouseTransform = false;
   PhysicalPoint? _mouseLast;
-  double _mouseTravelMm = 0;
 
   bool _trackpadTransform = false;
   double _trackpadLastRotation = 0;
@@ -448,7 +447,6 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     final point = _toPhysical(event.localPosition);
     _mouseTransform = true;
     _mouseLast = point;
-    _mouseTravelMm = 0;
     _preciseTarget = _exactHit(point);
     _transformTarget = _controller.hitTest(point, haloMm: _interactionHaloMm);
     _oneFingerStart = point;
@@ -463,7 +461,6 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     final current = _toPhysical(event.localPosition);
     final last = _mouseLast;
     if (last == null) return;
-    _mouseTravelMm += last.distanceTo(current);
     _mouseLast = current;
     _oneFingerLast = current;
     if (_oneFingerPath.isEmpty ||
@@ -504,7 +501,6 @@ class _BoardScreenNextState extends State<BoardScreenNext>
 
     _mouseTransform = false;
     _mouseLast = null;
-    _mouseTravelMm = 0;
     _clearGesture();
   }
 
@@ -561,16 +557,36 @@ class _BoardScreenNextState extends State<BoardScreenNext>
       _controller.beginTransform(target);
     }
 
-    final delta = PhysicalPoint(
-      -event.scrollDelta.dx / widget.logicalPixelsPerMm,
-      -event.scrollDelta.dy / widget.logicalPixelsPerMm,
-    );
-    _controller.transformBy(delta, 0);
+    final keys = HardwareKeyboard.instance.logicalKeysPressed;
+    final rotate =
+        keys.contains(LogicalKeyboardKey.shiftLeft) ||
+        keys.contains(LogicalKeyboardKey.shiftRight);
+    if (rotate) {
+      final scroll = event.scrollDelta.dy.abs() >= event.scrollDelta.dx.abs()
+          ? event.scrollDelta.dy
+          : event.scrollDelta.dx;
+      _controller.transformBy(const PhysicalPoint(0, 0), -scroll * 0.008);
+    } else {
+      final delta = PhysicalPoint(
+        -event.scrollDelta.dx / widget.logicalPixelsPerMm,
+        -event.scrollDelta.dy / widget.logicalPixelsPerMm,
+      );
+      _controller.transformBy(delta, 0);
+    }
     _desktopScrollEndTimer?.cancel();
     _desktopScrollEndTimer = Timer(
       const Duration(milliseconds: 180),
       _finishDesktopScrollTransform,
     );
+  }
+
+  void _rotateSelectedDesktop(double degrees) {
+    final target = _selected;
+    if (!kIsWeb || target == null) return;
+    _finishDesktopScrollTransform();
+    _controller.beginTransform(target);
+    _controller.transformBy(const PhysicalPoint(0, 0), degrees * math.pi / 180);
+    _controller.endTransform();
   }
 
   void _finishDesktopScrollTransform() {
@@ -586,7 +602,6 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     _controller.cancelTransform();
     _mouseTransform = false;
     _mouseLast = null;
-    _mouseTravelMm = 0;
     _clearGesture();
   }
 
@@ -943,6 +958,18 @@ class _BoardScreenNextState extends State<BoardScreenNext>
               onPressed: _controller.canRedo ? _controller.redo : null,
               child: const Text('Redo'),
             ),
+            if (kIsWeb && selected != null) ...[
+              MenuItemButton(
+                closeOnActivate: false,
+                onPressed: () => _rotateSelectedDesktop(-15),
+                child: const Text('Rotate left 15 degrees'),
+              ),
+              MenuItemButton(
+                closeOnActivate: false,
+                onPressed: () => _rotateSelectedDesktop(15),
+                child: const Text('Rotate right 15 degrees'),
+              ),
+            ],
           ],
           child: const Text('Edit'),
         ),
@@ -1024,7 +1051,11 @@ class _BoardScreenNextState extends State<BoardScreenNext>
             ('Tip / stand', 'Click-drag across the footprint edge'),
             ('Light full / walls', 'Draw a loop around an upright footprint'),
             ('Move', 'Two-finger scroll over a footprint'),
-            ('Rotate', 'Not available in Safari yet'),
+            ('Rotate', 'Hold Shift while two-finger scrolling'),
+            (
+              'Rotate in steps',
+              'Select, then Menu > Edit > Rotate left/right 15 degrees',
+            ),
           ]
         : const [
             ('Create / resize / delete', 'Double-tap'),
