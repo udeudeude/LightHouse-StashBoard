@@ -149,10 +149,12 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   }
 
   void _handleAccelerometer(AccelerometerEvent event) {
-    final zDominant = event.z.abs() > 7.2 &&
+    final zDominant =
+        event.z.abs() > 7.2 &&
         event.z.abs() > event.x.abs() * 1.25 &&
         event.z.abs() > event.y.abs() * 1.25;
-    final faceDown = zDominant &&
+    final faceDown =
+        zDominant &&
         (defaultTargetPlatform == TargetPlatform.iOS
             ? event.z > 0
             : event.z < 0);
@@ -185,13 +187,12 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   }
 
   PhysicalPoint _toPhysical(Offset point) => PhysicalPoint(
-        point.dx / widget.logicalPixelsPerMm,
-        point.dy / widget.logicalPixelsPerMm,
-      );
+    point.dx / widget.logicalPixelsPerMm,
+    point.dy / widget.logicalPixelsPerMm,
+  );
 
-  LightElement? get _selected => _selectedId == null
-      ? null
-      : _controller.state.elementById(_selectedId!);
+  LightElement? get _selected =>
+      _selectedId == null ? null : _controller.state.elementById(_selectedId!);
 
   bool _containsPoint(LightElement element, PhysicalPoint point) {
     final polygon = polygonForElement(element, _controller.geometry);
@@ -199,7 +200,8 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     for (var i = 0; i < polygon.length; i += 1) {
       final a = polygon[i];
       final b = polygon[(i + 1) % polygon.length];
-      final cross = (b.xMm - a.xMm) * (point.yMm - a.yMm) -
+      final cross =
+          (b.xMm - a.xMm) * (point.yMm - a.yMm) -
           (b.yMm - a.yMm) * (point.xMm - a.xMm);
       if (cross.abs() < 0.0001) continue;
       final currentSign = cross.sign;
@@ -232,10 +234,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     if (_mouseTransform || _creditsVisible) return;
     final point = _toPhysical(details.localFocalPoint);
     _preciseTarget = _exactHit(point);
-    _transformTarget = _controller.hitTest(
-      point,
-      haloMm: _interactionHaloMm,
-    );
+    _transformTarget = _controller.hitTest(point, haloMm: _interactionHaloMm);
     _oneFingerStart = point;
     _oneFingerLast = point;
     _oneFingerPath
@@ -453,7 +452,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     final keyboard = HardwareKeyboard.instance;
     final shift =
         keyboard.isLogicalKeyPressed(LogicalKeyboardKey.shiftLeft) ||
-            keyboard.isLogicalKeyPressed(LogicalKeyboardKey.shiftRight);
+        keyboard.isLogicalKeyPressed(LogicalKeyboardKey.shiftRight);
     if (shift) {
       _controller.transformBy(
         PhysicalPoint.zero,
@@ -760,7 +759,9 @@ class _BoardScreenNextState extends State<BoardScreenNext>
 
   Widget _menu() {
     final selected = _selected;
-    final structure = selected == null ? null : _controller.structureFor(selected);
+    final structure = selected == null
+        ? null
+        : _controller.structureFor(selected);
 
     final structureItems = <Widget>[
       if (selected != null)
@@ -906,51 +907,51 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   }
 
   Widget _credits() => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => setState(() => _creditsVisible = false),
-        child: ColoredBox(
-          color: Colors.black,
-          child: SafeArea(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(36),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Text(
-                      'LightHouse',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 32,
-                        fontWeight: FontWeight.w300,
-                        letterSpacing: 2,
-                      ),
-                    ),
-                    SizedBox(height: 20),
-                    Text(
-                      'An illuminated physical play surface for Looney Pyramids',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                    SizedBox(height: 28),
-                    Text(
-                      'Project: udeudeude\nSoftware: Flutter + ChatGPT\nLooney Pyramids: Looney Labs\nOpen source under the MIT License',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white54, height: 1.6),
-                    ),
-                    SizedBox(height: 28),
-                    Text(
-                      'Turn the device face-down to reveal this screen.\nTap anywhere to return.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white38, fontSize: 12),
-                    ),
-                  ],
+    behavior: HitTestBehavior.opaque,
+    onTap: () => setState(() => _creditsVisible = false),
+    child: ColoredBox(
+      color: Colors.black,
+      child: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(36),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Text(
+                  'LightHouse',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w300,
+                    letterSpacing: 2,
+                  ),
                 ),
-              ),
+                SizedBox(height: 20),
+                Text(
+                  'An illuminated physical play surface for Looney Pyramids',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70),
+                ),
+                SizedBox(height: 28),
+                Text(
+                  'Project: udeudeude\nSoftware: Flutter + ChatGPT\nLooney Pyramids: Looney Labs\nOpen source under the MIT License',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white54, height: 1.6),
+                ),
+                SizedBox(height: 28),
+                Text(
+                  'Turn the device face-down to reveal this screen.\nTap anywhere to return.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+              ],
             ),
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -989,10 +990,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
           SafeArea(
             child: Align(
               alignment: Alignment.bottomRight,
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: _menu(),
-              ),
+              child: Padding(padding: const EdgeInsets.all(8), child: _menu()),
             ),
           ),
           if (_creditsVisible) Positioned.fill(child: _credits()),
