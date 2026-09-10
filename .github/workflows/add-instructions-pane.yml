@@ -24,41 +24,29 @@ jobs:
 
           path = Path('lib/ui/board_screen_next.dart')
           text = path.read_text()
+          if '_instructionsVisible' in text:
+              raise SystemExit(0)
 
-          old = """  bool _faceDownLatched = false;
-  bool _creditsVisible = false;
-"""
-          new = """  bool _faceDownLatched = false;
-  bool _creditsVisible = false;
-  bool _instructionsVisible = false;
-"""
-          if old not in text:
-              raise SystemExit('state insertion point not found')
-          text = text.replace(old, new, 1)
+          marker = '  bool _creditsVisible = false;\n'
+          if marker not in text:
+              raise SystemExit('credits state marker not found')
+          text = text.replace(marker, marker + '  bool _instructionsVisible = false;\n', 1)
 
-          old = """        SubmenuButton(
-          submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
-          menuChildren: [
-            MenuItemButton(
-              onPressed: _exportBoard,
-"""
-          new = """        MenuItemButton(
+          export_pos = text.index('onPressed: _exportBoard')
+          submenu_pos = text.rfind('        SubmenuButton(', 0, export_pos)
+          if submenu_pos < 0:
+              raise SystemExit('transfer submenu not found')
+          menu_item = """        MenuItemButton(
           onPressed: () => setState(() => _instructionsVisible = true),
           child: const Text('Instructions'),
         ),
-        SubmenuButton(
-          submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
-          menuChildren: [
-            MenuItemButton(
-              onPressed: _exportBoard,
 """
-          if old not in text:
-              raise SystemExit('menu insertion point not found')
-          text = text.replace(old, new, 1)
+          text = text[:submenu_pos] + menu_item + text[submenu_pos:]
 
-          old = """  Widget _credits() => GestureDetector(
-"""
-          new = """  Widget _instructionsPane() {
+          credits_marker = '  Widget _credits() => GestureDetector(\n'
+          if credits_marker not in text:
+              raise SystemExit('credits widget marker not found')
+          pane = """  Widget _instructionsPane() {
     final desktop = kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.macOS ||
             defaultTargetPlatform == TargetPlatform.windows ||
@@ -71,7 +59,7 @@ jobs:
             ('Tip / stand', 'Click-drag across the footprint edge'),
             ('Light full / walls', 'Draw a loop around an upright footprint'),
             ('Move', 'Two-finger scroll over a footprint'),
-            ('Rotate', 'Two-finger twist, when the browser exposes it'),
+            ('Rotate', 'Not available in Safari yet'),
           ]
         : const [
             ('Create / resize / delete', 'Double-tap'),
@@ -143,18 +131,6 @@ jobs:
                           ),
                         ),
                       ),
-                    if (desktop)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 3),
-                        child: Text(
-                          'Safari may not expose trackpad twist rotation.',
-                          style: TextStyle(
-                            color: Colors.white54,
-                            fontSize: 12,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -165,32 +141,17 @@ jobs:
     );
   }
 
-  Widget _credits() => GestureDetector(
 """
-          if old not in text:
-              raise SystemExit('widget insertion point not found')
-          text = text.replace(old, new, 1)
+          text = text.replace(credits_marker, pane + credits_marker, 1)
 
-          old = """          SafeArea(
-            child: Align(
-              alignment: Alignment.bottomRight,
-              child: Padding(padding: const EdgeInsets.all(8), child: _menu()),
-            ),
-          ),
-          if (_creditsVisible) Positioned.fill(child: _credits()),
-"""
-          new = """          SafeArea(
-            child: Align(
-              alignment: Alignment.bottomRight,
-              child: Padding(padding: const EdgeInsets.all(8), child: _menu()),
-            ),
-          ),
-          if (_instructionsVisible) _instructionsPane(),
-          if (_creditsVisible) Positioned.fill(child: _credits()),
-"""
-          if old not in text:
-              raise SystemExit('stack insertion point not found')
-          text = text.replace(old, new, 1)
+          stack_marker = '          if (_creditsVisible) Positioned.fill(child: _credits()),\n'
+          if stack_marker not in text:
+              raise SystemExit('credits stack marker not found')
+          text = text.replace(
+              stack_marker,
+              '          if (_instructionsVisible) _instructionsPane(),\n' + stack_marker,
+              1,
+          )
 
           path.write_text(text)
           PY
@@ -202,5 +163,3 @@ jobs:
           git add lib/ui/board_screen_next.dart
           git commit -m "ux: add persistent instructions pane"
           git push origin HEAD:lighthouse-2-rewrite
-
-# Trigger after workflow creation.
