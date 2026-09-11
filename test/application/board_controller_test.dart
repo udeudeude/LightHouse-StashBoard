@@ -140,4 +140,24 @@ void main() {
       const PhysicalPoint(60, 55),
     );
   });
+
+  test('end transform can snap position and heading', () {
+    final controller = BoardController();
+    controller.createAt(const PhysicalPoint(20, 20));
+    final element = controller.state.elements.single;
+
+    controller.beginTransform(element);
+    controller.transformBy(
+      const PhysicalPoint(4, 3),
+      17 * 3.141592653589793 / 180,
+    );
+    controller.endTransform(
+      snapDegrees: 15,
+      snapPosition: const PhysicalPoint(30, 40),
+    );
+
+    final snapped = controller.state.elements.single;
+    expect(snapped.position, const PhysicalPoint(30, 40));
+    expect(snapped.headingDegrees, closeTo(15, 0.001));
+  });
 }

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Refined board menus into Board > File and Board > Underlays, with Mac-like file ordering.
+- Added The Wheel, Looney Ludo four-board start, and Launchpad 23 underlays plus optional grid snapping.
+- Added exact rotation controls and persistent rotation snap increments, reflected by tick marks in the menu circle.
+- Moved the menu and device-specific instructions to the lower left.
+- Added a light-lottery animation and optional 30-second random fade/delete entropy control.
+- Added iOS web motion-permission support for face-down credits; native mobile keeps a hard orientation lock.
+- Removed the user-facing Structure menu while retaining structure semantics internally.
+
+# Changelog
+
 ## 0.3.1 - 2026-09-09
 
 Physical interaction refinement from hands-on testing.

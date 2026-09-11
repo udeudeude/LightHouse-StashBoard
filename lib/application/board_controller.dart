@@ -26,6 +26,7 @@ class BoardController extends ChangeNotifier {
   final List<BoardCommand> _redoStack = [];
   Set<String> _transformingIds = const {};
   BoardState? _transformBeforeState;
+  String? _transformAnchorId;
   static int _idCounter = 0;
 
   bool get canUndo => _undoStack.isNotEmpty;
@@ -66,6 +67,12 @@ class BoardController extends ChangeNotifier {
       case PyramidSize.large:
         _execute(RemoveElementCommand(current));
     }
+  }
+
+  void deleteElement(LightElement element) {
+    final current = _state.elementById(element.id);
+    if (current == null) return;
+    _execute(RemoveElementCommand(current));
   }
 
   void toggleIllumination(LightElement element) {
@@ -131,6 +138,7 @@ class BoardController extends ChangeNotifier {
     final current = _state.elementById(element.id);
     if (current == null) return;
     _transformBeforeState = _state;
+    _transformAnchorId = current.id;
     var structure = _state.structureForElement(current.id);
     if (structure != null && !_structureIsAligned(_state, structure)) {
       _state = _state.removeStructure(structure.id);
@@ -165,18 +173,46 @@ class BoardController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void endTransform() {
+  void endTransform({double? snapDegrees, PhysicalPoint? snapPosition}) {
     final before = _transformBeforeState;
     var movingIds = _transformingIds;
+    final anchorId = _transformAnchorId;
     _transformBeforeState = null;
     _transformingIds = const {};
+    _transformAnchorId = null;
     if (before == null || movingIds.isEmpty) return;
+
+    final anchor = anchorId == null ? null : _state.elementById(anchorId);
+    if (anchor != null && (snapDegrees != null || snapPosition != null)) {
+      final delta = snapPosition == null
+          ? PhysicalPoint.zero
+          : snapPosition - anchor.position;
+      var headingDelta = 0.0;
+      if (snapDegrees != null && snapDegrees > 0) {
+        final snapped =
+            (anchor.headingDegrees / snapDegrees).roundToDouble() * snapDegrees;
+        final raw = snapped - anchor.headingDegrees;
+        headingDelta = ((raw + 540) % 360) - 180;
+      }
+      final replacements = <LightElement>[];
+      for (final id in movingIds) {
+        final member = _state.elementById(id);
+        if (member == null) continue;
+        replacements.add(
+          member.copyWith(
+            position: member.position + delta,
+            headingDegrees: normalizeDegrees(
+              member.headingDegrees + headingDelta,
+            ),
+          ),
+        );
+      }
+      _state = _state.replaceMany(replacements);
+    }
 
     _state = _resolvePushes(_state, movingIds);
     _state = _snapWallOverlaps(_state, movingIds);
 
-    // If an automatic nest absorbed the moved element, the completed command
-    // includes the whole resulting structure.
     final expanded = <String>{...movingIds};
     for (final id in movingIds) {
       final element = _state.elementById(id);
@@ -196,6 +232,7 @@ class BoardController extends ChangeNotifier {
     final before = _transformBeforeState;
     _transformBeforeState = null;
     _transformingIds = const {};
+    _transformAnchorId = null;
     if (before == null) return;
     _state = before;
     notifyListeners();

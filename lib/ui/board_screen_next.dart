@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:sensors_plus/sensors_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../application/board_controller.dart';
@@ -16,8 +17,8 @@ import '../domain/board_underlay.dart';
 import '../domain/convex_geometry.dart';
 import '../domain/geometry.dart';
 import '../domain/light_element.dart';
-import '../domain/light_structure.dart';
 import '../domain/physical_point.dart';
+import '../platform/motion_permission.dart';
 import 'board_painter.dart';
 
 class BoardScreenNext extends StatefulWidget {
@@ -69,12 +70,27 @@ class _BoardScreenNextState extends State<BoardScreenNext>
 
   double _brightness = 1.0;
   bool _orientationLocked = false;
+  double? _rotationSnapDegrees;
+  bool _gridSnapEnabled = false;
+  bool _transformTranslated = false;
+
+  final math.Random _random = math.Random();
+  Map<String, double> _effectOpacities = const {};
+  PhysicalPoint? _burstCenter;
+  double? _burstProgress;
+  bool _randomizerRunning = false;
+  bool _entropyEnabled = false;
+  Timer? _entropyTimer;
+  int _effectGeneration = 0;
+  int _entropyGeneration = 0;
 
   StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
   Timer? _faceDownTimer;
   bool _faceDownLatched = false;
   bool _creditsVisible = false;
   bool _instructionsVisible = false;
+  bool _motionPermissionAttempted = false;
+  double? _faceUpZSign;
 
   @override
   void initState() {
@@ -86,14 +102,17 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _applyBrightness();
-      _startFaceDownMonitoring();
+      _loadInteractionPreferences();
+      if (!kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) {
+        _startFaceDownMonitoring();
+      }
     });
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_orientationLocked) return;
+    if (_orientationLocked || kIsWeb) return;
     _orientationLocked = true;
     final orientation = MediaQuery.orientationOf(context);
     // A physical board must not rotate underneath pieces. Lock to one exact
@@ -122,6 +141,9 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     WidgetsBinding.instance.removeObserver(this);
     _faceDownTimer?.cancel();
     _desktopScrollEndTimer?.cancel();
+    _entropyTimer?.cancel();
+    _effectGeneration += 1;
+    _entropyGeneration += 1;
     _accelerometerSubscription?.cancel();
     _controller.removeListener(_refresh);
     _controller.dispose();
@@ -146,26 +168,54 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   }
 
   void _startFaceDownMonitoring() {
-    if (kIsWeb ||
-        (defaultTargetPlatform != TargetPlatform.iOS &&
-            defaultTargetPlatform != TargetPlatform.android)) {
+    if (defaultTargetPlatform != TargetPlatform.iOS &&
+        defaultTargetPlatform != TargetPlatform.android) {
       return;
     }
+    if (_accelerometerSubscription != null) return;
     _accelerometerSubscription = accelerometerEventStream(
-      samplingPeriod: const Duration(milliseconds: 180),
+      samplingPeriod: const Duration(milliseconds: 160),
     ).listen(_handleAccelerometer, onError: (_) {});
+  }
+
+  Future<void> _ensureMotionPermission({bool force = false}) async {
+    if (!kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) {
+      _startFaceDownMonitoring();
+      return;
+    }
+    if (_motionPermissionAttempted && !force) return;
+    _motionPermissionAttempted = true;
+    final granted = await requestWebMotionPermission();
+    if (!mounted) return;
+    if (granted) {
+      _startFaceDownMonitoring();
+    } else if (force) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Motion access was not granted. Safari requires Motion & Orientation access for face-down credits.',
+          ),
+        ),
+      );
+    }
   }
 
   void _handleAccelerometer(AccelerometerEvent event) {
     final zDominant =
-        event.z.abs() > 7.2 &&
-        event.z.abs() > event.x.abs() * 1.25 &&
-        event.z.abs() > event.y.abs() * 1.25;
-    final faceDown =
-        zDominant &&
-        (defaultTargetPlatform == TargetPlatform.iOS
-            ? event.z > 0
-            : event.z < 0);
+        event.z.abs() > 7.0 &&
+        event.z.abs() > event.x.abs() * 1.2 &&
+        event.z.abs() > event.y.abs() * 1.2;
+    if (!zDominant) {
+      _faceDownTimer?.cancel();
+      _faceDownTimer = null;
+      return;
+    }
+
+    // Learn the face-up sign from the first flat reading. This avoids relying
+    // on platform-specific accelerometer sign conventions, which differ
+    // between native and browser sensor implementations.
+    _faceUpZSign ??= event.z.sign;
+    final faceDown = event.z.sign != _faceUpZSign;
 
     if (!faceDown) {
       _faceDownTimer?.cancel();
@@ -184,6 +234,194 @@ class _BoardScreenNextState extends State<BoardScreenNext>
       _faceDownLatched = true;
       setState(() => _creditsVisible = true);
     });
+  }
+
+  Future<void> _loadInteractionPreferences() async {
+    final preferences = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final snap = preferences.getDouble('lighthouse.rotationSnapDegrees.v1');
+    setState(() {
+      _rotationSnapDegrees = snap != null && snap > 0 ? snap : null;
+      _gridSnapEnabled =
+          preferences.getBool('lighthouse.gridSnapEnabled.v1') ?? false;
+    });
+  }
+
+  Future<void> _setRotationSnap(double? degrees) async {
+    setState(() => _rotationSnapDegrees = degrees);
+    final preferences = await SharedPreferences.getInstance();
+    if (degrees == null) {
+      await preferences.remove('lighthouse.rotationSnapDegrees.v1');
+    } else {
+      await preferences.setDouble('lighthouse.rotationSnapDegrees.v1', degrees);
+    }
+  }
+
+  Future<void> _toggleGridSnap() async {
+    setState(() => _gridSnapEnabled = !_gridSnapEnabled);
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(
+      'lighthouse.gridSnapEnabled.v1',
+      _gridSnapEnabled,
+    );
+  }
+
+  PhysicalPoint? _nearestUnderlaySnapPoint() {
+    if (!_gridSnapEnabled || !_transformTranslated) return null;
+    final targetId = _transformTarget?.id ?? _desktopScrollTarget?.id;
+    if (targetId == null) return null;
+    final target = _controller.state.elementById(targetId);
+    if (target == null || !_controller.state.underlay.isVisible) return null;
+    final mediaSize = MediaQuery.sizeOf(context);
+    final padding = MediaQuery.viewPaddingOf(context);
+    final widthPx = mediaSize.width - padding.horizontal;
+    final heightPx = mediaSize.height - padding.vertical;
+    return _controller.state.underlay.nearestSnapPoint(
+      target.position,
+      boardWidthMm: widthPx / widget.logicalPixelsPerMm,
+      boardHeightMm: heightPx / widget.logicalPixelsPerMm,
+    );
+  }
+
+  void _endTransformWithSnaps({bool includeGrid = true}) {
+    _controller.endTransform(
+      snapDegrees: _rotationSnapDegrees,
+      snapPosition: includeGrid ? _nearestUnderlaySnapPoint() : null,
+    );
+    _transformTranslated = false;
+  }
+
+  Future<void> _runLightRandomizer() async {
+    if (_randomizerRunning || _controller.state.elements.isEmpty) return;
+    final generation = ++_effectGeneration;
+    setState(() {
+      _randomizerRunning = true;
+      _effectOpacities = {
+        for (final element in _controller.state.elements) element.id: 0.0,
+      };
+      _burstCenter = null;
+      _burstProgress = null;
+    });
+
+    Future<bool> wait(Duration duration) async {
+      await Future<void>.delayed(duration);
+      return mounted && generation == _effectGeneration;
+    }
+
+    if (!await wait(const Duration(milliseconds: 220))) return;
+    final milliseconds = 3000 + _random.nextInt(7001);
+    final endAt = DateTime.now().add(Duration(milliseconds: milliseconds));
+    while (DateTime.now().isBefore(endAt)) {
+      final elements = _controller.state.elements;
+      if (elements.isEmpty) break;
+      final next = {for (final element in elements) element.id: 0.0};
+      final flashes = math.min(elements.length, 1 + _random.nextInt(4));
+      for (var i = 0; i < flashes; i += 1) {
+        final element = elements[_random.nextInt(elements.length)];
+        next[element.id] = 0.35 + _random.nextDouble() * 0.65;
+      }
+      if (!mounted || generation != _effectGeneration) return;
+      setState(() => _effectOpacities = next);
+      if (!await wait(Duration(milliseconds: 70 + _random.nextInt(180)))) {
+        return;
+      }
+    }
+
+    final elements = _controller.state.elements;
+    if (elements.isEmpty || !mounted || generation != _effectGeneration) {
+      if (mounted) {
+        setState(() {
+          _randomizerRunning = false;
+          _effectOpacities = const {};
+        });
+      }
+      return;
+    }
+
+    setState(() {
+      _effectOpacities = {for (final element in elements) element.id: 0};
+    });
+    if (!await wait(const Duration(milliseconds: 320))) return;
+
+    final winner = elements[_random.nextInt(elements.length)];
+    setState(() {
+      _effectOpacities = {
+        for (final element in elements)
+          element.id: element.id == winner.id ? 1.0 : 0.0,
+      };
+      _burstCenter = winner.position;
+      _burstProgress = 0.0;
+    });
+
+    for (var frame = 0; frame <= 42; frame += 1) {
+      if (!mounted || generation != _effectGeneration) return;
+      setState(() => _burstProgress = frame / 42);
+      if (!await wait(const Duration(milliseconds: 20))) return;
+    }
+    setState(() => _burstProgress = null);
+
+    for (var frame = 0; frame <= 36; frame += 1) {
+      if (!mounted || generation != _effectGeneration) return;
+      final opacity = frame / 36;
+      final currentIds = _controller.state.elements.map((e) => e.id).toSet();
+      setState(() {
+        _effectOpacities = {
+          for (final id in currentIds) id: id == winner.id ? 1 : opacity,
+        };
+      });
+      if (!await wait(const Duration(milliseconds: 36))) return;
+    }
+
+    if (!mounted || generation != _effectGeneration) return;
+    setState(() {
+      _randomizerRunning = false;
+      _effectOpacities = const {};
+      _burstCenter = null;
+      _burstProgress = null;
+    });
+  }
+
+  void _toggleEntropy() {
+    _entropyGeneration += 1;
+    _entropyTimer?.cancel();
+    setState(() => _entropyEnabled = !_entropyEnabled);
+    if (!_entropyEnabled) return;
+    _entropyTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _fadeAndDeleteRandomElement(),
+    );
+  }
+
+  Future<void> _fadeAndDeleteRandomElement() async {
+    if (!_entropyEnabled || _randomizerRunning) return;
+    final elements = _controller.state.elements;
+    if (elements.isEmpty) return;
+    final generation = _entropyGeneration;
+    final victim = elements[_random.nextInt(elements.length)];
+    for (var frame = 0; frame <= 24; frame += 1) {
+      if (!mounted ||
+          generation != _entropyGeneration ||
+          !_entropyEnabled ||
+          _randomizerRunning) {
+        return;
+      }
+      final opacity = 1 - frame / 24;
+      setState(() {
+        _effectOpacities = {..._effectOpacities, victim.id: opacity};
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 45));
+    }
+    if (!mounted || generation != _entropyGeneration || !_entropyEnabled)
+      return;
+    final current = _controller.state.elementById(victim.id);
+    if (current != null) _controller.deleteElement(current);
+    if (mounted) {
+      setState(() {
+        final next = Map<String, double>.from(_effectOpacities)
+          ..remove(victim.id);
+        _effectOpacities = next;
+      });
+    }
   }
 
   void _refresh() {
@@ -253,6 +491,10 @@ class _BoardScreenNextState extends State<BoardScreenNext>
       ..add(point);
     _lastRotation = 0;
     _transformStarted = false;
+    _transformTranslated = false;
+    if (_transformTarget != null) {
+      setState(() => _selectedId = _transformTarget!.id);
+    }
 
     if (details.pointerCount >= 2 && _transformTarget != null) {
       _controller.beginTransform(_transformTarget!);
@@ -283,6 +525,9 @@ class _BoardScreenNextState extends State<BoardScreenNext>
       );
       final rotationDelta = details.rotation - _lastRotation;
       _lastRotation = details.rotation;
+      if (delta.distanceTo(PhysicalPoint.zero) > 0.35) {
+        _transformTranslated = true;
+      }
       _controller.transformBy(delta, rotationDelta);
       return;
     }
@@ -298,7 +543,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   void _onScaleEnd(ScaleEndDetails details) {
     if (_mouseTransform || _creditsVisible) return;
     if (_transformStarted) {
-      _controller.endTransform();
+      _endTransformWithSnaps();
       HapticFeedback.lightImpact();
       _clearGesture();
       return;
@@ -527,12 +772,15 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     );
     final rotationDelta = event.rotation - _trackpadLastRotation;
     _trackpadLastRotation = event.rotation;
+    if (delta.distanceTo(PhysicalPoint.zero) > 0.35) {
+      _transformTranslated = true;
+    }
     _controller.transformBy(delta, rotationDelta);
   }
 
   void _onPointerPanZoomEnd(PointerPanZoomEndEvent event) {
     if (!_trackpadTransform || !kIsWeb) return;
-    _controller.endTransform();
+    _endTransformWithSnaps();
     _trackpadTransform = false;
     _trackpadLastRotation = 0;
     _transformTarget = null;
@@ -572,6 +820,9 @@ class _BoardScreenNextState extends State<BoardScreenNext>
         -event.scrollDelta.dx / widget.logicalPixelsPerMm,
         -event.scrollDelta.dy / widget.logicalPixelsPerMm,
       );
+      if (delta.distanceTo(PhysicalPoint.zero) > 0.35) {
+        _transformTranslated = true;
+      }
       _controller.transformBy(delta, 0);
     }
     _desktopScrollEndTimer?.cancel();
@@ -581,20 +832,25 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     );
   }
 
-  void _rotateSelectedDesktop(double degrees) {
+  void _rotateSelected(double degrees) {
     final target = _selected;
-    if (!kIsWeb || target == null) return;
+    if (target == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Tap a footprint first.')));
+      return;
+    }
     _finishDesktopScrollTransform();
     _controller.beginTransform(target);
-    _controller.transformBy(const PhysicalPoint(0, 0), degrees * math.pi / 180);
-    _controller.endTransform();
+    _controller.transformBy(PhysicalPoint.zero, degrees * math.pi / 180);
+    _controller.endTransform(snapDegrees: _rotationSnapDegrees);
   }
 
   void _finishDesktopScrollTransform() {
     _desktopScrollEndTimer?.cancel();
     _desktopScrollEndTimer = null;
     if (!_desktopScrollTransform) return;
-    _controller.endTransform();
+    _endTransformWithSnaps();
     _desktopScrollTransform = false;
     _desktopScrollTarget = null;
   }
@@ -614,35 +870,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     _oneFingerPath.clear();
     _lastRotation = 0;
     _transformStarted = false;
-  }
-
-  Future<void> _structureAction(String action) async {
-    final selected = _selected;
-    if (selected == null) return;
-    var succeeded = false;
-    switch (action) {
-      case 'stack':
-        succeeded = _controller.snapIntoNearestStructure(
-          selected,
-          StructureKind.stack,
-        );
-      case 'nest':
-        succeeded = _controller.snapIntoNearestStructure(
-          selected,
-          StructureKind.nest,
-        );
-      case 'detach':
-        succeeded = _controller.detachFromStructure(selected);
-      case 'toggle':
-        succeeded = _controller.toggleStructureKind(selected);
-    }
-    if (succeeded) {
-      await HapticFeedback.mediumImpact();
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No compatible nearby footprint.')),
-      );
-    }
+    _transformTranslated = false;
   }
 
   Future<String?> _askForTitle(String initial) async {
@@ -766,80 +994,39 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     _controller.renameBoard(title);
   }
 
-  Future<void> _showOrientationDialog() async {
+  void _setHeading(double angle) {
     final selected = _selected;
-    if (selected == null) return;
-    const angles = <double>[0, 45, 90, 135, 180, 225, 270, 315];
-    final angle = await showDialog<double>(
+    if (selected == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Tap a footprint first.')));
+      return;
+    }
+    _controller.setHeading(selected, angle);
+  }
+
+  void _selectUnderlay(BoardUnderlay underlay) {
+    _controller.setUnderlay(underlay);
+  }
+
+  Future<void> _showOrientationLockInfo() async {
+    final nativeMobile =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.iOS ||
+            defaultTargetPlatform == TargetPlatform.android);
+    await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Orientation'),
-        content: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final angle in angles)
-              OutlinedButton(
-                onPressed: () => Navigator.pop(context, angle),
-                child: Text('${angle.toInt()}°'),
-              ),
-          ],
+        title: const Text('Orientation lock'),
+        content: Text(
+          nativeMobile
+              ? 'LightHouse locks the board to one device orientation while it is open.'
+              : defaultTargetPlatform == TargetPlatform.iOS
+              ? 'The iPhone/iPad web browser does not expose a reliable page orientation lock. The native LightHouse app can lock orientation.'
+              : 'Orientation locking depends on browser and platform support. The native mobile app locks the board while it is open.',
         ),
       ),
     );
-    if (angle != null) _controller.setHeading(selected, angle);
-  }
-
-  Future<void> _showUnderlayDialog() async {
-    final underlay = await showDialog<BoardUnderlay>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('Underlay · 27 mm cells'),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, BoardUnderlay.none),
-            child: const Text('None'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, BoardUnderlay.grid3x3),
-            child: const Text('3×3 · Lava Flows / Launchpad 23'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, BoardUnderlay.grid3x4),
-            child: const Text('3×4 · Homeworlds bank'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, BoardUnderlay.grid4x4),
-            child: const Text('4×4 grid'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, BoardUnderlay.grid5x5),
-            child: const Text('5×5 · Volcano / Pharaoh / Freeze Tag'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, BoardUnderlay.grid5x6),
-            child: const Text('5×6 grid'),
-          ),
-          SimpleDialogOption(
-            onPressed: () =>
-                Navigator.pop(context, BoardUnderlay.martianChess2),
-            child: const Text('4×8 · Martian Chess · 2 players'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, BoardUnderlay.chess8x8),
-            child: const Text('8×8 · Martian Chess · 4 players'),
-          ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(24, 8, 24, 4),
-            child: Text(
-              'Underlays keep physical-size cells, so large boards may extend beyond a phone screen.',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (underlay != null) _controller.setUnderlay(underlay);
   }
 
   Future<void> _showBrightnessDialog() async {
@@ -955,42 +1142,93 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     });
   }
 
-  Widget _menu() {
-    final selected = _selected;
-    final structure = selected == null
-        ? null
-        : _controller.structureFor(selected);
+  Widget _checkmark(bool checked) => SizedBox(
+    width: 18,
+    child: checked ? const Icon(Icons.check, size: 16) : null,
+  );
 
-    final structureItems = <Widget>[
-      if (selected != null)
+  Widget _menu() {
+    const angles = <double>[0, 45, 90, 135, 180, 225, 270, 315];
+    const snapOptions = <double>[15, 30, 45, 90];
+
+    final fileItems = <Widget>[
+      MenuItemButton(onPressed: _newBoard, child: const Text('New')),
+      MenuItemButton(onPressed: _manageSavedBoards, child: const Text('Open…')),
+      MenuItemButton(onPressed: () => _saveBoard(), child: const Text('Save')),
+      MenuItemButton(
+        onPressed: () => _saveBoard(asCopy: true),
+        child: const Text('Save a Copy…'),
+      ),
+      MenuItemButton(onPressed: _renameBoard, child: const Text('Rename…')),
+      MenuItemButton(
+        onPressed: _importBoard,
+        child: const Text('Import Board JSON…'),
+      ),
+      MenuItemButton(
+        onPressed: _exportBoard,
+        child: const Text('Copy Board JSON'),
+      ),
+    ];
+
+    final underlayItems = <Widget>[
+      MenuItemButton(
+        closeOnActivate: false,
+        leadingIcon: _checkmark(_gridSnapEnabled),
+        onPressed: _toggleGridSnap,
+        child: const Text('Snap pieces to underlay'),
+      ),
+      for (final underlay in BoardUnderlay.values)
         MenuItemButton(
-          onPressed: () => _structureAction('stack'),
-          child: const Text('Align nearby footprint as stack'),
+          closeOnActivate: false,
+          leadingIcon: _checkmark(_controller.state.underlay == underlay),
+          onPressed: () => _selectUnderlay(underlay),
+          child: Text(underlay.menuLabel),
         ),
-      if (selected != null)
-        MenuItemButton(
-          onPressed: () => _structureAction('nest'),
-          child: const Text('Align nearby footprint as nest'),
-        ),
-      if (structure != null)
-        MenuItemButton(
-          onPressed: () => _structureAction('toggle'),
-          child: Text(
-            structure.kind == StructureKind.stack
-                ? 'Treat structure as nest'
-                : 'Treat structure as stack',
+    ];
+
+    final rotationItems = <Widget>[
+      MenuItemButton(
+        onPressed: () => _rotateSelected(-15),
+        child: const Text('Rotate Left 15°'),
+      ),
+      MenuItemButton(
+        onPressed: () => _rotateSelected(15),
+        child: const Text('Rotate Right 15°'),
+      ),
+      SubmenuButton(
+        submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
+        menuChildren: [
+          for (final angle in angles)
+            MenuItemButton(
+              onPressed: () => _setHeading(angle),
+              child: Text('${angle.toInt()}°'),
+            ),
+        ],
+        child: const Text('Set Orientation'),
+      ),
+      SubmenuButton(
+        submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
+        menuChildren: [
+          MenuItemButton(
+            closeOnActivate: false,
+            leadingIcon: _checkmark(_rotationSnapDegrees == null),
+            onPressed: () => _setRotationSnap(null),
+            child: const Text('Off'),
           ),
+          for (final degrees in snapOptions)
+            MenuItemButton(
+              closeOnActivate: false,
+              leadingIcon: _checkmark(_rotationSnapDegrees == degrees),
+              onPressed: () => _setRotationSnap(degrees),
+              child: Text('${degrees.toInt()}° increments'),
+            ),
+        ],
+        child: Text(
+          _rotationSnapDegrees == null
+              ? 'Always Snap Rotation · Off'
+              : 'Always Snap Rotation · ${_rotationSnapDegrees!.toInt()}°',
         ),
-      if (structure != null)
-        MenuItemButton(
-          onPressed: () => _structureAction('detach'),
-          child: const Text('Detach selected footprint'),
-        ),
-      if (selected == null)
-        const MenuItemButton(
-          onPressed: null,
-          child: Text('Tap a footprint first'),
-        ),
+      ),
     ];
 
     return MenuAnchor(
@@ -998,30 +1236,19 @@ class _BoardScreenNextState extends State<BoardScreenNext>
         SubmenuButton(
           submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
           menuChildren: [
-            MenuItemButton(
-              onPressed: null,
-              child: Text(_controller.state.title),
+            SubmenuButton(
+              submenuIcon: const WidgetStatePropertyAll<Widget?>(
+                SizedBox.shrink(),
+              ),
+              menuChildren: fileItems,
+              child: const Text('File'),
             ),
-            MenuItemButton(onPressed: _newBoard, child: const Text('New')),
-            MenuItemButton(
-              onPressed: () => _saveBoard(),
-              child: const Text('Save'),
-            ),
-            MenuItemButton(
-              onPressed: () => _saveBoard(asCopy: true),
-              child: const Text('Save a copy'),
-            ),
-            MenuItemButton(
-              onPressed: _manageSavedBoards,
-              child: const Text('Saved boards'),
-            ),
-            MenuItemButton(
-              onPressed: _renameBoard,
-              child: const Text('Rename'),
-            ),
-            MenuItemButton(
-              onPressed: _showUnderlayDialog,
-              child: const Text('Underlay'),
+            SubmenuButton(
+              submenuIcon: const WidgetStatePropertyAll<Widget?>(
+                SizedBox.shrink(),
+              ),
+              menuChildren: underlayItems,
+              child: const Text('Underlays'),
             ),
           ],
           child: const Text('Board'),
@@ -1039,29 +1266,15 @@ class _BoardScreenNextState extends State<BoardScreenNext>
               onPressed: _controller.canRedo ? _controller.redo : null,
               child: const Text('Redo'),
             ),
-            MenuItemButton(
-              onPressed: selected == null ? null : _showOrientationDialog,
-              child: const Text('Orientation'),
+            SubmenuButton(
+              submenuIcon: const WidgetStatePropertyAll<Widget?>(
+                SizedBox.shrink(),
+              ),
+              menuChildren: rotationItems,
+              child: const Text('Rotation'),
             ),
-            if (kIsWeb && selected != null) ...[
-              MenuItemButton(
-                closeOnActivate: false,
-                onPressed: () => _rotateSelectedDesktop(-15),
-                child: const Text('Rotate left 15 degrees'),
-              ),
-              MenuItemButton(
-                closeOnActivate: false,
-                onPressed: () => _rotateSelectedDesktop(15),
-                child: const Text('Rotate right 15 degrees'),
-              ),
-            ],
           ],
           child: const Text('Edit'),
-        ),
-        SubmenuButton(
-          submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
-          menuChildren: structureItems,
-          child: const Text('Structure'),
         ),
         SubmenuButton(
           submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
@@ -1074,6 +1287,15 @@ class _BoardScreenNextState extends State<BoardScreenNext>
               onPressed: _showBrightnessDialog,
               child: const Text('Brightness'),
             ),
+            MenuItemButton(
+              onPressed: _showOrientationLockInfo,
+              child: const Text('Orientation Lock'),
+            ),
+            if (kIsWeb && defaultTargetPlatform == TargetPlatform.iOS)
+              MenuItemButton(
+                onPressed: () => _ensureMotionPermission(force: true),
+                child: const Text('Enable Face-down Credits'),
+              ),
             if (kIsWeb)
               MenuItemButton(
                 onPressed: _showWebInstallHelp,
@@ -1086,36 +1308,22 @@ class _BoardScreenNextState extends State<BoardScreenNext>
           onPressed: () => setState(() => _instructionsVisible = true),
           child: const Text('Instructions'),
         ),
-        SubmenuButton(
-          submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
-          menuChildren: [
-            MenuItemButton(
-              onPressed: _exportBoard,
-              child: const Text('Copy board JSON'),
-            ),
-            MenuItemButton(
-              onPressed: _importBoard,
-              child: const Text('Import JSON from clipboard'),
-            ),
-          ],
-          child: const Text('Transfer'),
-        ),
       ],
       builder: (context, menuController, child) => IconButton(
         tooltip: 'Menu',
-        onPressed: () {
+        onPressed: () async {
           if (menuController.isOpen) {
             menuController.close();
-          } else {
-            menuController.open();
+            return;
           }
+          await _ensureMotionPermission();
+          if (mounted) menuController.open();
         },
-        icon: Container(
+        icon: SizedBox(
           width: 36,
           height: 36,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white70, width: 0.55),
+          child: CustomPaint(
+            painter: _MenuCirclePainter(snapDegrees: _rotationSnapDegrees),
           ),
         ),
       ),
@@ -1123,46 +1331,66 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   }
 
   Widget _instructionsPane() {
-    final desktop =
+    final size = MediaQuery.sizeOf(context);
+    final isDesktop =
         kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.macOS ||
             defaultTargetPlatform == TargetPlatform.windows ||
             defaultTargetPlatform == TargetPlatform.linux);
+    final isIos = defaultTargetPlatform == TargetPlatform.iOS;
+    final isTablet = size.shortestSide >= 600;
+    final deviceName = isDesktop
+        ? 'Desktop / trackpad'
+        : isIos
+        ? (isTablet ? 'iPad' : 'iPhone')
+        : defaultTargetPlatform == TargetPlatform.android
+        ? (isTablet ? 'Android tablet' : 'Android phone')
+        : 'Touch device';
 
-    final instructions = desktop
-        ? const [
+    final instructions = isDesktop
+        ? <(String, String)>[
             ('Create / resize / delete', 'Double-click'),
             ('Select', 'Click'),
-            ('Tip / stand', 'Click-drag across the footprint edge'),
+            ('Tip / stand', 'Click-drag across the actual footprint edge'),
             ('Light full / walls', 'Draw a loop around an upright footprint'),
             ('Move', 'Two-finger scroll over a footprint'),
             ('Rotate', 'Hold Shift while two-finger scrolling'),
-            ('Snap orientation', 'Select, then Menu > Edit > Orientation'),
-            (
-              'Rotate in steps',
-              'Select, then Menu > Edit > Rotate left/right 15 degrees',
-            ),
+            ('Exact rotation', 'Menu > Edit > Rotation'),
+            ('Grid snap', 'Menu > Board > Underlays > Snap pieces to underlay'),
+            ('Light lottery', 'Tap the starburst button at lower right'),
+            ('Entropy', 'Toggle the small deletion control at lower right'),
           ]
-        : const [
+        : <(String, String)>[
             ('Create / resize / delete', 'Double-tap'),
             ('Select', 'Tap'),
-            ('Tip / stand', 'Drag from inside across the footprint edge'),
+            (
+              'Tip / stand',
+              'Drag from inside across the actual footprint edge',
+            ),
             ('Light full / walls', 'Draw a loop around an upright footprint'),
             ('Move + rotate', 'Two fingers: drag and twist'),
-            ('Snap orientation', 'Select, then Menu > Edit > Orientation'),
+            ('Exact rotation', 'Menu > Edit > Rotation'),
+            ('Grid snap', 'Menu > Board > Underlays > Snap pieces to underlay'),
+            ('Light lottery', 'Tap the starburst button at lower right'),
+            ('Entropy', 'Toggle the small deletion control at lower right'),
+            if (isIos && kIsWeb)
+              (
+                'Face-down credits',
+                'Tap the menu once, allow Motion & Orientation access, then turn the device screen-down',
+              ),
           ];
 
     return SafeArea(
       child: Align(
-        alignment: Alignment.topRight,
+        alignment: Alignment.bottomLeft,
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 62),
           child: Material(
             color: const Color(0xEE171717),
             elevation: 8,
             borderRadius: BorderRadius.circular(12),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 340),
+              constraints: const BoxConstraints(maxWidth: 350),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 10, 8, 14),
                 child: Column(
@@ -1171,10 +1399,10 @@ class _BoardScreenNextState extends State<BoardScreenNext>
                   children: [
                     Row(
                       children: [
-                        const Expanded(
+                        Expanded(
                           child: Text(
-                            'Instructions',
-                            style: TextStyle(
+                            'Instructions · $deviceName',
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
@@ -1223,6 +1451,43 @@ class _BoardScreenNextState extends State<BoardScreenNext>
       ),
     );
   }
+
+  Widget _randomizerControls() => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      IconButton(
+        tooltip: 'Light lottery',
+        onPressed: _randomizerRunning ? null : _runLightRandomizer,
+        icon: Text(
+          '✦',
+          style: TextStyle(
+            color: _randomizerRunning ? Colors.white30 : Colors.white70,
+            fontSize: 23,
+            fontWeight: FontWeight.w300,
+          ),
+        ),
+      ),
+      Semantics(
+        button: true,
+        toggled: _entropyEnabled,
+        label: 'Delete one random footprint every 30 seconds',
+        child: Tooltip(
+          message: 'Entropy · delete one random footprint every 30 seconds',
+          child: GestureDetector(
+            onTap: _toggleEntropy,
+            behavior: HitTestBehavior.opaque,
+            child: SizedBox(
+              width: 40,
+              height: 40,
+              child: CustomPaint(
+                painter: _EntropyControlPainter(enabled: _entropyEnabled),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
 
   Widget _credits() => GestureDetector(
     behavior: HitTestBehavior.opaque,
@@ -1303,6 +1568,9 @@ class _BoardScreenNextState extends State<BoardScreenNext>
                     logicalPixelsPerMm: widget.logicalPixelsPerMm,
                     geometry: _controller.geometry,
                     selectedId: _selectedId,
+                    elementOpacities: _effectOpacities,
+                    burstCenter: _burstCenter,
+                    burstProgress: _burstProgress,
                   ),
                   child: const SizedBox.expand(),
                 ),
@@ -1311,8 +1579,17 @@ class _BoardScreenNextState extends State<BoardScreenNext>
           ),
           SafeArea(
             child: Align(
-              alignment: Alignment.bottomRight,
+              alignment: Alignment.bottomLeft,
               child: Padding(padding: const EdgeInsets.all(8), child: _menu()),
+            ),
+          ),
+          SafeArea(
+            child: Align(
+              alignment: Alignment.bottomRight,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: _randomizerControls(),
+              ),
             ),
           ),
           if (_instructionsVisible) _instructionsPane(),
@@ -1321,4 +1598,73 @@ class _BoardScreenNextState extends State<BoardScreenNext>
       ),
     );
   }
+}
+
+class _MenuCirclePainter extends CustomPainter {
+  const _MenuCirclePainter({required this.snapDegrees});
+
+  final double? snapDegrees;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.min(size.width, size.height) / 2 - 1;
+    final paint = Paint()
+      ..color = Colors.white70
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.7;
+    canvas.drawCircle(center, radius, paint);
+
+    final degrees = snapDegrees;
+    if (degrees == null || degrees <= 0) return;
+    final tickCount = (360 / degrees).round().clamp(4, 24);
+    for (var i = 0; i < tickCount; i += 1) {
+      final angle = -math.pi / 2 + 2 * math.pi * i / tickCount;
+      final outer = radius - 3;
+      final inner = radius - (i % 2 == 0 ? 6 : 5);
+      canvas.drawLine(
+        Offset(
+          center.dx + inner * math.cos(angle),
+          center.dy + inner * math.sin(angle),
+        ),
+        Offset(
+          center.dx + outer * math.cos(angle),
+          center.dy + outer * math.sin(angle),
+        ),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_MenuCirclePainter oldDelegate) =>
+      oldDelegate.snapDegrees != snapDegrees;
+}
+
+class _EntropyControlPainter extends CustomPainter {
+  const _EntropyControlPainter({required this.enabled});
+
+  final bool enabled;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final paint = Paint()
+      ..color = enabled ? Colors.white : Colors.white54
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
+    canvas.drawCircle(center, 11, paint);
+    canvas.drawLine(
+      Offset(center.dx - 4.5, center.dy),
+      Offset(center.dx + 4.5, center.dy),
+      paint,
+    );
+    if (enabled) {
+      canvas.drawCircle(center, 2, Paint()..color = Colors.white);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_EntropyControlPainter oldDelegate) =>
+      oldDelegate.enabled != enabled;
 }
