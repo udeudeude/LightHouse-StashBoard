@@ -1,0 +1,84 @@
+name: Fix face-down credits latch
+
+on:
+  push:
+    branches:
+      - lighthouse-2-rewrite
+    paths:
+      - .github/workflows/credits-latch-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: lighthouse-2-rewrite
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Apply latch fix
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('lib/ui/board_screen_next.dart')
+          text = path.read_text()
+          old = '''    if (!faceDown) {
+      _faceDownTimer?.cancel();
+      _faceDownTimer = null;
+      _faceDownLatched = false;
+      if (_creditsVisible && mounted) {
+        setState(() => _creditsVisible = false);
+      }
+      return;
+    }
+'''
+          new = '''    if (!faceDown) {
+      _faceDownTimer?.cancel();
+      _faceDownTimer = null;
+      // Keep credits visible after the device comes face-up so the easter egg
+      // can actually be seen. Once dismissed while face-up, arm it again.
+      if (!_creditsVisible) _faceDownLatched = false;
+      return;
+    }
+'''
+          if old not in text:
+              raise SystemExit('face-up block not found')
+          text = text.replace(old, new, 1)
+          text = text.replace(
+              '''  Widget _credits() => GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onTap: null,
+''',
+              '''  Widget _credits() => GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onTap: () => setState(() => _creditsVisible = false),
+''',
+              1,
+          )
+          text = text.replace(
+              '''                  'Keep the device face-down to view this screen.\\nTurn it face-up to return.',
+''',
+              '''                  'Triggered by turning the device face-down.\\nTap anywhere to return.',
+''',
+              1,
+          )
+          path.write_text(text)
+          PY
+      - name: Format and verify
+        run: |
+          dart format lib test
+          flutter pub get
+          flutter analyze
+          flutter test
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/ui/board_screen_next.dart
+          git commit -m "fix: latch face-down credits until dismissed"
+          git push origin HEAD:lighthouse-2-rewrite
