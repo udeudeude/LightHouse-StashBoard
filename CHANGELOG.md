@@ -7,10 +7,9 @@
 - Added exact rotation controls and persistent rotation snap increments, reflected by tick marks in the menu circle.
 - Moved the menu and device-specific instructions to the lower left.
 - Added a light-lottery animation and optional 30-second random fade/delete entropy control.
-- Added iOS web motion-permission support for face-down credits; native mobile keeps a hard orientation lock.
+- Added iOS web motion-permission support for face-down credits; credits now remain visible after the device returns face-up until dismissed.
+- Native mobile keeps a hard orientation lock; iOS Safari exposes orientation-lock guidance because browsers cannot reliably force it.
 - Removed the user-facing Structure menu while retaining structure semantics internally.
-
-# Changelog
 
 ## 0.3.1 - 2026-09-09
 
