@@ -220,10 +220,9 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     if (!faceDown) {
       _faceDownTimer?.cancel();
       _faceDownTimer = null;
-      _faceDownLatched = false;
-      if (_creditsVisible && mounted) {
-        setState(() => _creditsVisible = false);
-      }
+      // Keep credits visible after the device comes face-up so the easter egg
+      // can actually be seen. Once dismissed while face-up, arm it again.
+      if (!_creditsVisible) _faceDownLatched = false;
       return;
     }
     if (_faceDownLatched || _faceDownTimer != null) return;
@@ -1491,7 +1490,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
 
   Widget _credits() => GestureDetector(
     behavior: HitTestBehavior.opaque,
-    onTap: null,
+    onTap: () => setState(() => _creditsVisible = false),
     child: ColoredBox(
       color: Colors.black,
       child: SafeArea(
@@ -1524,7 +1523,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
                 ),
                 SizedBox(height: 28),
                 Text(
-                  'Keep the device face-down to view this screen.\nTurn it face-up to return.',
+                  'Triggered by turning the device face-down.\nTap anywhere to return.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white38, fontSize: 12),
                 ),
