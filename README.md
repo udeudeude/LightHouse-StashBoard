@@ -17,37 +17,35 @@ The web build requires manual physical calibration because browsers do not relia
 - canonical board coordinates stored in physical millimeters
 - automatic physical-size calibration for recognized iPhone models
 - automatic Android calibration from reported physical DPI when trustworthy
-- manual ruler calibration with a fixed left endpoint
-- manual calibration using the base of a real Large pyramid
-- quick physical-size verification from the board
-- upright Small, Medium, and Large light footprints
-- full and wall-only upright illumination
-- flat pyramid rendering
-- double-tap empty board to create a Small upright footprint
+- manual ruler and real-Large-pyramid calibration, plus quick size verification
+- upright Small, Medium, and Large light footprints with full or wall-only illumination
+- flat pyramid footprints
+- double-tap empty board to create a Small footprint
 - double-tap a footprint to cycle Small -> Medium -> Large -> delete
-- scribble over an upright footprint to toggle full/wall illumination
-- one-finger directional drag to tip an upright footprint or stand a flat footprint
-- two-finger translate and rotate
-- mouse drag to translate on desktop; Shift-drag to rotate
-- explicit interaction halos in physical millimeters
-- pointer-cancel recovery
-- stack/nest structure records with independently illuminated member footprints
-- coherent movement and rotation of grouped structures
-- deterministic convex-polygon collision separation for same-size pushing
-- command-based undo/redo, including structure operations
-- versioned JSON board serialization with v1 migration
-- local autosave with a backup copy for recovery
-- named saved boards
-- save-a-copy, rename, load, and delete saved boards
-- JSON copy/paste import and export
-- screen-awake behavior during play
-- native application-brightness control with lifecycle reset
-- haptic feedback for important manipulations
-- orientation lock while a board is active, with restoration on exit
-- safe-board insets around display cutouts/system-reserved regions
+- loose encirclement gesture around an upright footprint to toggle full/wall illumination
+- exact-footprint one-finger directional drag to tip or stand, without an interaction halo
+- two-finger translate and rotate on touch devices
+- mouse/trackpad interaction on desktop with device-specific instructions
+- direct orientation controls at 45-degree intervals
+- persistent optional rotation snapping at 15, 30, 45, or 90 degrees, shown by degree ticks inside the menu control
+- optional position snapping to the active underlay
+- underlays for common rectangular grids, Martian Chess, Launchpad 23, a four-board Looney Ludo start, and The Wheel used by Petri Dish / Color Wheel
+- automatic different-size wall-only nesting on overlap
+- internal stack/nest structure records with independently illuminated member footprints and coherent grouped movement
+- deterministic convex-polygon collision pushing across pyramid sizes
+- command-based undo/redo
+- versioned JSON board serialization with migration support
+- local autosave with recovery backup, named saved boards, and JSON clipboard import/export
+- lower-left hierarchical Board > File / Underlays menu with Mac-like File ordering
+- device-specific instructions shown from the lower left
+- Light Lottery theatrical random chooser
+- optional Entropy Delete mode that fades and removes one random footprint every 30 seconds
+- face-down credits on supported motion-enabled devices, including iOS web permission handling
+- native mobile orientation lock; web builds explain the browser limitation and defer to the device's rotation lock
+- screen-awake behavior, native application-brightness control, haptics, and safe-board insets
 - installable PWA metadata and iOS Add-to-Home-Screen guidance
 - generated iOS, Android, and web platform runners
-- automated formatting, static analysis, tests, unsigned iOS build validation, and GitHub Pages deployment
+- automated formatting, static analysis, tests, unsigned iOS build validation, Android build validation, and GitHub Pages deployment
 
 ## Interaction notes
 
@@ -55,19 +53,25 @@ Touch:
 
 - Double tap empty space: create Small
 - Double tap a footprint: Small -> Medium -> Large -> delete
-- One-finger directional drag: tip / stand
-- Scribble and return near the starting point: full <-> wall-only illumination
-- Two-finger drag/rotate: translate and rotate
-- Tap: select a footprint for structure actions
+- One-finger directional drag across the exact footprint boundary: tip / stand
+- Draw a loose loop around an upright footprint: full <-> wall-only illumination
+- Two-finger drag/twist: translate and rotate
+- Tap: select a footprint for direct orientation commands
 
 Desktop:
 
 - Double click mirrors double tap
 - Click selects
-- Mouse drag moves a footprint or structure
-- Shift + mouse drag rotates it
+- Mouse/trackpad controls are summarized in the in-app Instructions panel for the current device
 
-A selected footprint exposes structure actions for snapping into a nearby stack/nest, changing the structure kind, or detaching the footprint.
+Board controls:
+
+- Board > File: New, Open, Save, Save a Copy, Rename, JSON import/export
+- Board > Underlays: choose an underlay and optionally enable position snapping
+- Edit > Rotation: rotate in 15-degree steps, choose an exact orientation, or enable persistent rotation snapping
+- Display: size/calibration, brightness, orientation information, and face-down-credits permission where required
+
+The user-facing Structure menu was removed. Stack/nest relationships remain an internal board concept so physically grouped footprints still move, push, save, restore, and undo correctly.
 
 ## Development
 
