@@ -1,4 +1,4 @@
-name: Add desktop rotation controls
+name: Apply board refinements
 
 on:
   push:
@@ -21,109 +21,10 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Patch desktop controls
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('lib/ui/board_screen_next.dart')
-          text = path.read_text()
-
-          text = text.replace('  double _mouseTravelMm = 0;\n', '')
-          text = text.replace('    _mouseTravelMm = 0;\n', '')
-          text = text.replace('    _mouseTravelMm += last.distanceTo(current);\n', '')
-
-          marker = "  void _finishDesktopScrollTransform() {\n"
-          if "void _rotateSelectedDesktop" not in text:
-              helper = """  void _rotateSelectedDesktop(double degrees) {
-    final target = _selected;
-    if (!kIsWeb || target == null) return;
-    _finishDesktopScrollTransform();
-    _controller.beginTransform(target);
-    _controller.transformBy(
-      const PhysicalPoint(0, 0),
-      degrees * math.pi / 180,
-    );
-    _controller.endTransform();
-  }
-
-"""
-              if marker not in text:
-                  raise SystemExit('desktop helper insertion point not found')
-              text = text.replace(marker, helper + marker, 1)
-
-          old = """    final delta = PhysicalPoint(
-      -event.scrollDelta.dx / widget.logicalPixelsPerMm,
-      -event.scrollDelta.dy / widget.logicalPixelsPerMm,
-    );
-    _controller.transformBy(delta, 0);
-"""
-          new = """    final keys = HardwareKeyboard.instance.logicalKeysPressed;
-    final rotate =
-        keys.contains(LogicalKeyboardKey.shiftLeft) ||
-        keys.contains(LogicalKeyboardKey.shiftRight);
-    if (rotate) {
-      final scroll = event.scrollDelta.dy.abs() >= event.scrollDelta.dx.abs()
-          ? event.scrollDelta.dy
-          : event.scrollDelta.dx;
-      _controller.transformBy(const PhysicalPoint(0, 0), -scroll * 0.008);
-    } else {
-      final delta = PhysicalPoint(
-        -event.scrollDelta.dx / widget.logicalPixelsPerMm,
-        -event.scrollDelta.dy / widget.logicalPixelsPerMm,
-      );
-      _controller.transformBy(delta, 0);
-    }
-"""
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif "final rotate =" not in text:
-              raise SystemExit('desktop scroll transform block not found')
-
-          old = """            MenuItemButton(
-              closeOnActivate: false,
-              onPressed: _controller.canRedo ? _controller.redo : null,
-              child: const Text('Redo'),
-            ),
-"""
-          new = """            MenuItemButton(
-              closeOnActivate: false,
-              onPressed: _controller.canRedo ? _controller.redo : null,
-              child: const Text('Redo'),
-            ),
-            if (kIsWeb && selected != null) ...[
-              MenuItemButton(
-                closeOnActivate: false,
-                onPressed: () => _rotateSelectedDesktop(-15),
-                child: const Text('Rotate left 15 degrees'),
-              ),
-              MenuItemButton(
-                closeOnActivate: false,
-                onPressed: () => _rotateSelectedDesktop(15),
-                child: const Text('Rotate right 15 degrees'),
-              ),
-            ],
-"""
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif "Rotate left 15 degrees" not in text:
-              raise SystemExit('edit menu insertion point not found')
-
-          old = """            ('Move', 'Two-finger scroll over a footprint'),
-            ('Rotate', 'Not available in Safari yet'),
-"""
-          new = """            ('Move', 'Two-finger scroll over a footprint'),
-            ('Rotate', 'Hold Shift while two-finger scrolling'),
-            ('Rotate in steps', 'Select, then Menu > Edit > Rotate left/right 15 degrees'),
-"""
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif "Hold Shift while two-finger scrolling" not in text:
-              raise SystemExit('desktop instructions block not found')
-
-          path.write_text(text)
-          PY
-          dart format lib/ui/board_screen_next.dart
+      - name: Apply refinements
+        run: python3 .github/scripts/refine_board.py
+      - name: Format Dart
+        run: dart format lib test
       - name: Verify
         run: |
           flutter pub get
@@ -131,8 +32,12 @@ jobs:
           flutter test
       - name: Commit changes
         run: |
+          if git diff --quiet; then
+            echo "No source changes"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lib/ui/board_screen_next.dart
-          git commit -m "ux: make desktop rotation fully accessible"
+          git add lib test
+          git commit -m "ux: refine overlap orientation and underlays"
           git push origin HEAD:lighthouse-2-rewrite
