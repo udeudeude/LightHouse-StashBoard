@@ -46,6 +46,108 @@ void main() {
     expect(stood.illumination, IlluminationPattern.wall);
   });
 
+  test('pose change detaches a footprint from its structure', () {
+    final large = element(
+      id: 'large',
+      size: PyramidSize.large,
+      position: const PhysicalPoint(50, 50),
+    );
+    final small = element(
+      id: 'small',
+      size: PyramidSize.small,
+      position: const PhysicalPoint(50, 50),
+    );
+    final controller = BoardController(
+      initialState: BoardState(
+        elements: [large, small],
+        structures: const [
+          LightStructure(
+            id: 'structure',
+            kind: StructureKind.stack,
+            memberIds: ['large', 'small'],
+          ),
+        ],
+      ),
+    );
+
+    controller.tipOrStand(small, const PhysicalPoint(10, 0));
+
+    expect(controller.state.structures, isEmpty);
+    expect(controller.state.elementById('large')!.pose, PyramidPose.upright);
+    expect(controller.state.elementById('small')!.pose, PyramidPose.flat);
+  });
+
+  test('old misaligned structures self-heal before a transform', () {
+    final large = element(
+      id: 'large',
+      size: PyramidSize.large,
+      position: const PhysicalPoint(50, 50),
+    );
+    final small = element(
+      id: 'small',
+      size: PyramidSize.small,
+      position: const PhysicalPoint(60, 50),
+    );
+    final controller = BoardController(
+      initialState: BoardState(
+        elements: [large, small],
+        structures: const [
+          LightStructure(
+            id: 'stale',
+            kind: StructureKind.nest,
+            memberIds: ['large', 'small'],
+          ),
+        ],
+      ),
+    );
+
+    controller.beginTransform(small);
+    controller.transformBy(const PhysicalPoint(10, 0), 0);
+    controller.endTransform();
+
+    expect(controller.state.structures, isEmpty);
+    expect(
+      controller.state.elementById('large')!.position,
+      const PhysicalPoint(50, 50),
+    );
+    expect(
+      controller.state.elementById('small')!.position,
+      const PhysicalPoint(70, 50),
+    );
+  });
+
+  test('standard orientation applies to an entire aligned structure', () {
+    final large = element(
+      id: 'large',
+      size: PyramidSize.large,
+      position: const PhysicalPoint(50, 50),
+      headingDegrees: 12,
+    );
+    final small = element(
+      id: 'small',
+      size: PyramidSize.small,
+      position: const PhysicalPoint(50, 50),
+      headingDegrees: 12,
+    );
+    final controller = BoardController(
+      initialState: BoardState(
+        elements: [large, small],
+        structures: const [
+          LightStructure(
+            id: 'structure',
+            kind: StructureKind.stack,
+            memberIds: ['large', 'small'],
+          ),
+        ],
+      ),
+    );
+
+    controller.setHeading(small, 45);
+
+    expect(controller.state.elementById('large')!.headingDegrees, 45);
+    expect(controller.state.elementById('small')!.headingDegrees, 45);
+  });
+
   test('collision pushes another footprint during the drag', () {
     final moving = element(
       id: 'moving',

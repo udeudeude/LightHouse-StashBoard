@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lighthouse/domain/board_state.dart';
+import 'package:lighthouse/domain/board_underlay.dart';
 import 'package:lighthouse/domain/light_element.dart';
 import 'package:lighthouse/domain/light_structure.dart';
 import 'package:lighthouse/domain/physical_point.dart';
@@ -8,6 +9,7 @@ void main() {
   test('board documents round-trip through JSON with structures', () {
     final original = BoardState(
       title: 'Example',
+      underlay: BoardUnderlay.grid5x5,
       elements: const [
         LightElement(
           id: 'large',
@@ -39,6 +41,7 @@ void main() {
     expect(restored.title, 'Example');
     expect(restored.elements, original.elements);
     expect(restored.structures, original.structures);
+    expect(restored.underlay, BoardUnderlay.grid5x5);
   });
 
   test('version 1 board documents migrate without structures', () {
@@ -60,6 +63,7 @@ void main() {
     expect(restored.elements, hasLength(1));
     expect(restored.structures, isEmpty);
     expect(restored.title, 'Untitled Board');
+    expect(restored.underlay, BoardUnderlay.none);
   });
 
   test('removing a member cleans up undersized structures', () {

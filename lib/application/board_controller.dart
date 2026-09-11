@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../domain/board_command.dart';
 import '../domain/board_state.dart';
+import '../domain/board_underlay.dart';
 import '../domain/convex_geometry.dart';
 import '../domain/geometry.dart';
 import '../domain/light_element.dart';
@@ -90,7 +91,7 @@ class BoardController extends ChangeNotifier {
       final ux = drag.xMm / distance;
       final uy = drag.yMm / distance;
       final dragAngle = math.atan2(uy, ux) * 180 / math.pi;
-      _replace(
+      _commitPoseChange(
         current,
         current.copyWith(
           pose: PyramidPose.flat,
@@ -114,7 +115,7 @@ class BoardController extends ChangeNotifier {
     final heading = current.headingDegrees * math.pi / 180;
     final shiftX = -hingeTravel * math.sin(heading);
     final shiftY = hingeTravel * math.cos(heading);
-    _replace(
+    _commitPoseChange(
       current,
       current.copyWith(
         pose: PyramidPose.upright,
@@ -129,11 +130,15 @@ class BoardController extends ChangeNotifier {
   void beginTransform(LightElement element) {
     final current = _state.elementById(element.id);
     if (current == null) return;
-    final structure = _state.structureForElement(current.id);
+    _transformBeforeState = _state;
+    var structure = _state.structureForElement(current.id);
+    if (structure != null && !_structureIsAligned(_state, structure)) {
+      _state = _state.removeStructure(structure.id);
+      structure = null;
+    }
     _transformingIds = structure == null
         ? {current.id}
         : structure.memberIds.toSet();
-    _transformBeforeState = _state;
   }
 
   void transformBy(PhysicalPoint delta, double rotationDeltaRadians) {
@@ -293,6 +298,34 @@ class BoardController extends ChangeNotifier {
     return true;
   }
 
+  void setHeading(LightElement element, double degrees) {
+    final current = _state.elementById(element.id);
+    if (current == null) return;
+    final heading = normalizeDegrees(degrees);
+    final structure = _state.structureForElement(current.id);
+    final ids = structure?.memberIds ?? [current.id];
+    final replacements = <LightElement>[];
+    for (final id in ids) {
+      final member = _state.elementById(id);
+      if (member == null) continue;
+      replacements.add(member.copyWith(headingDegrees: heading));
+    }
+    if (replacements.isEmpty) return;
+    final after = _state.replaceMany(replacements);
+    if (after == _state) return;
+    _execute(ReplaceBoardStateCommand(before: _state, after: after));
+  }
+
+  void setUnderlay(BoardUnderlay underlay) {
+    if (_state.underlay == underlay) return;
+    _execute(
+      ReplaceBoardStateCommand(
+        before: _state,
+        after: _state.copyWith(underlay: underlay),
+      ),
+    );
+  }
+
   void renameBoard(String title) {
     final trimmed = title.trim();
     if (trimmed.isEmpty || trimmed == _state.title) return;
@@ -327,7 +360,7 @@ class BoardController extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool _isAutomaticNestPair(LightElement a, LightElement b) {
+  bool _isAutomaticNestPair(BoardState state, LightElement a, LightElement b) {
     if (a.id == b.id ||
         a.pose != PyramidPose.upright ||
         b.pose != PyramidPose.upright ||
@@ -336,8 +369,8 @@ class BoardController extends ChangeNotifier {
         a.size == b.size) {
       return false;
     }
-    final aStructure = _state.structureForElement(a.id);
-    final bStructure = _state.structureForElement(b.id);
+    final aStructure = state.structureForElement(a.id);
+    final bStructure = state.structureForElement(b.id);
     return aStructure == null ||
         bStructure == null ||
         aStructure.id != bStructure.id;
@@ -364,7 +397,7 @@ class BoardController extends ChangeNotifier {
           // Two different-size wall-only upright footprints are allowed to
           // overlap during the drag because release will turn the overlap into
           // a perfectly aligned nest.
-          if (_isAutomaticNestPair(moving, stationary)) continue;
+          if (_isAutomaticNestPair(result, moving, stationary)) continue;
 
           final separation = minimumSeparationVector(
             polygonForElement(moving, geometry),
@@ -409,7 +442,7 @@ class BoardController extends ChangeNotifier {
 
         for (final candidate in result.elements.toList()) {
           if (moved.contains(candidate.id) ||
-              !_isAutomaticNestPair(moving, candidate)) {
+              !_isAutomaticNestPair(result, moving, candidate)) {
             continue;
           }
           final overlap = minimumSeparationVector(
@@ -468,6 +501,49 @@ class BoardController extends ChangeNotifier {
       if (!snapped) break;
     }
     return result;
+  }
+
+  void _commitPoseChange(LightElement before, LightElement after) {
+    var next = _state;
+    final structure = next.structureForElement(before.id);
+    if (structure != null) {
+      final remaining = structure.memberIds
+          .where((id) => id != before.id)
+          .toList();
+      next = remaining.length < 2
+          ? next.removeStructure(structure.id)
+          : next.upsertStructure(structure.copyWith(memberIds: remaining));
+    }
+    next = next.replace(after);
+
+    // Pose changes never shove neighboring pieces. If standing creates an
+    // unambiguous wall-only overlap, convert that overlap to a nest.
+    if (after.pose == PyramidPose.upright &&
+        after.illumination == IlluminationPattern.wall) {
+      next = _snapWallOverlaps(next, {after.id});
+    }
+
+    _execute(ReplaceBoardStateCommand(before: _state, after: next));
+  }
+
+  bool _structureIsAligned(BoardState state, LightStructure structure) {
+    if (structure.memberIds.length < 2) return false;
+    LightElement? anchor;
+    for (final id in structure.memberIds) {
+      final member = state.elementById(id);
+      if (member == null || member.pose != PyramidPose.upright) return false;
+      anchor ??= member;
+      if (member.position.distanceTo(anchor.position) > 0.05) return false;
+      final headingDifference = normalizeDegrees(
+        member.headingDegrees - anchor.headingDegrees,
+      );
+      final shortestHeadingDifference = math.min(
+        headingDifference,
+        360 - headingDifference,
+      );
+      if (shortestHeadingDifference > 0.1) return false;
+    }
+    return true;
   }
 
   void _replace(LightElement before, LightElement after) {

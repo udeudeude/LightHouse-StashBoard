@@ -1,3 +1,4 @@
+import 'board_underlay.dart';
 import 'light_element.dart';
 import 'light_structure.dart';
 
@@ -6,6 +7,7 @@ class BoardState {
     List<LightElement> elements = const [],
     List<LightStructure> structures = const [],
     this.title = 'Untitled Board',
+    this.underlay = BoardUnderlay.none,
   }) : elements = List.unmodifiable(elements),
        structures = List.unmodifiable(structures);
 
@@ -15,6 +17,7 @@ class BoardState {
   final List<LightElement> elements;
   final List<LightStructure> structures;
   final String title;
+  final BoardUnderlay underlay;
 
   LightElement? elementById(String id) {
     for (final element in elements) {
@@ -34,10 +37,12 @@ class BoardState {
     List<LightElement>? elements,
     List<LightStructure>? structures,
     String? title,
+    BoardUnderlay? underlay,
   }) => BoardState(
     elements: elements ?? this.elements,
     structures: structures ?? this.structures,
     title: title ?? this.title,
+    underlay: underlay ?? this.underlay,
   );
 
   BoardState add(LightElement element) =>
@@ -88,8 +93,9 @@ class BoardState {
 
   Map<String, Object> toJson() => {
     'format': 'lighthouse-board',
-    'version': 2,
+    'version': 3,
     'title': title,
+    'underlay': underlay.name,
     'elements': elements.map((element) => element.toJson()).toList(),
     'structures': structures.map((structure) => structure.toJson()).toList(),
   };
@@ -100,7 +106,7 @@ class BoardState {
     }
 
     final version = json['version'];
-    if (version != 1 && version != 2) {
+    if (version != 1 && version != 2 && version != 3) {
       throw const FormatException('Unsupported LightHouse board version.');
     }
 
@@ -119,6 +125,9 @@ class BoardState {
     final rawStructures = (json['structures'] as List?) ?? const [];
     return BoardState(
       title: (json['title'] as String?) ?? 'Untitled Board',
+      underlay: version == 3
+          ? BoardUnderlay.fromName(json['underlay'])
+          : BoardUnderlay.none,
       elements: elements,
       structures: rawStructures
           .map(

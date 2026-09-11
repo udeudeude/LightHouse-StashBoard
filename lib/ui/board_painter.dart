@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../domain/board_state.dart';
+import '../domain/board_underlay.dart';
 import '../domain/light_element.dart';
 import '../domain/pyramid_geometry.dart';
 
@@ -22,8 +23,45 @@ class BoardPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(Offset.zero & size, Paint()..color = Colors.black);
+    _paintUnderlay(canvas, size, state.underlay);
     for (final element in state.elements) {
       _paintElement(canvas, element);
+    }
+  }
+
+  void _paintUnderlay(Canvas canvas, Size size, BoardUnderlay underlay) {
+    if (!underlay.isVisible) return;
+
+    final cell = 27.0 * logicalPixelsPerMm;
+    final boardWidth = underlay.columns * cell;
+    final boardHeight = underlay.rows * cell;
+    final left = (size.width - boardWidth) / 2;
+    final top = (size.height - boardHeight) / 2;
+    final gridPaint = Paint()
+      ..color = const Color(0x55FFFFFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(0.7, logicalPixelsPerMm * 0.18);
+
+    if (underlay.isChessLike) {
+      final shade = Paint()..color = const Color(0x18FFFFFF);
+      for (var row = 0; row < underlay.rows; row += 1) {
+        for (var column = 0; column < underlay.columns; column += 1) {
+          if ((row + column).isEven) continue;
+          canvas.drawRect(
+            Rect.fromLTWH(left + column * cell, top + row * cell, cell, cell),
+            shade,
+          );
+        }
+      }
+    }
+
+    for (var column = 0; column <= underlay.columns; column += 1) {
+      final x = left + column * cell;
+      canvas.drawLine(Offset(x, top), Offset(x, top + boardHeight), gridPaint);
+    }
+    for (var row = 0; row <= underlay.rows; row += 1) {
+      final y = top + row * cell;
+      canvas.drawLine(Offset(left, y), Offset(left + boardWidth, y), gridPaint);
     }
   }
 

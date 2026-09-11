@@ -12,6 +12,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../application/board_controller.dart';
 import '../application/board_store.dart';
 import '../domain/board_state.dart';
+import '../domain/board_underlay.dart';
 import '../domain/convex_geometry.dart';
 import '../domain/geometry.dart';
 import '../domain/light_element.dart';
@@ -765,6 +766,82 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     _controller.renameBoard(title);
   }
 
+  Future<void> _showOrientationDialog() async {
+    final selected = _selected;
+    if (selected == null) return;
+    const angles = <double>[0, 45, 90, 135, 180, 225, 270, 315];
+    final angle = await showDialog<double>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Orientation'),
+        content: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final angle in angles)
+              OutlinedButton(
+                onPressed: () => Navigator.pop(context, angle),
+                child: Text('${angle.toInt()}°'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (angle != null) _controller.setHeading(selected, angle);
+  }
+
+  Future<void> _showUnderlayDialog() async {
+    final underlay = await showDialog<BoardUnderlay>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Underlay · 27 mm cells'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, BoardUnderlay.none),
+            child: const Text('None'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, BoardUnderlay.grid3x3),
+            child: const Text('3×3 · Lava Flows / Launchpad 23'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, BoardUnderlay.grid3x4),
+            child: const Text('3×4 · Homeworlds bank'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, BoardUnderlay.grid4x4),
+            child: const Text('4×4 grid'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, BoardUnderlay.grid5x5),
+            child: const Text('5×5 · Volcano / Pharaoh / Freeze Tag'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, BoardUnderlay.grid5x6),
+            child: const Text('5×6 grid'),
+          ),
+          SimpleDialogOption(
+            onPressed: () =>
+                Navigator.pop(context, BoardUnderlay.martianChess2),
+            child: const Text('4×8 · Martian Chess · 2 players'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, BoardUnderlay.chess8x8),
+            child: const Text('8×8 · Martian Chess · 4 players'),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 8, 24, 4),
+            child: Text(
+              'Underlays keep physical-size cells, so large boards may extend beyond a phone screen.',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (underlay != null) _controller.setUnderlay(underlay);
+  }
+
   Future<void> _showBrightnessDialog() async {
     if (kIsWeb) {
       await showDialog<void>(
@@ -942,6 +1019,10 @@ class _BoardScreenNextState extends State<BoardScreenNext>
               onPressed: _renameBoard,
               child: const Text('Rename'),
             ),
+            MenuItemButton(
+              onPressed: _showUnderlayDialog,
+              child: const Text('Underlay'),
+            ),
           ],
           child: const Text('Board'),
         ),
@@ -957,6 +1038,10 @@ class _BoardScreenNextState extends State<BoardScreenNext>
               closeOnActivate: false,
               onPressed: _controller.canRedo ? _controller.redo : null,
               child: const Text('Redo'),
+            ),
+            MenuItemButton(
+              onPressed: selected == null ? null : _showOrientationDialog,
+              child: const Text('Orientation'),
             ),
             if (kIsWeb && selected != null) ...[
               MenuItemButton(
@@ -1052,6 +1137,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
             ('Light full / walls', 'Draw a loop around an upright footprint'),
             ('Move', 'Two-finger scroll over a footprint'),
             ('Rotate', 'Hold Shift while two-finger scrolling'),
+            ('Snap orientation', 'Select, then Menu > Edit > Orientation'),
             (
               'Rotate in steps',
               'Select, then Menu > Edit > Rotate left/right 15 degrees',
@@ -1063,6 +1149,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
             ('Tip / stand', 'Drag from inside across the footprint edge'),
             ('Light full / walls', 'Draw a loop around an upright footprint'),
             ('Move + rotate', 'Two fingers: drag and twist'),
+            ('Snap orientation', 'Select, then Menu > Edit > Orientation'),
           ];
 
     return SafeArea(
