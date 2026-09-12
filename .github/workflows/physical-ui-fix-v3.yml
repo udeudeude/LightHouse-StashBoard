@@ -34,6 +34,11 @@ jobs:
               line[10:] if line.startswith('          ') else line
               for line in lines
           )
+          brittle = """if old not in text:\n    raise SystemExit('index.html bridge block not found')\npath.write_text(text.replace(old, new))"""
+          robust = """bridge_start = text.index('  <script>\\n    window.lighthouseRequestMotionPermission')\nbridge_end = text.index('  </script>', bridge_start) + len('  </script>')\npath.write_text(text[:bridge_start] + new + text[bridge_end:])"""
+          if brittle not in script:
+              raise SystemExit('bridge patch section not found in staged patch')
+          script = script.replace(brittle, robust, 1)
           exec(compile(script, 'physical-ui-fix-v2', 'exec'), {'__name__': '__main__'})
           PY
       - name: Verify
