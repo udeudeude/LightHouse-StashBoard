@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- On iPhone web, motion permission is now requested from the first ordinary board touch rather than requiring the hidden credits behavior to depend on opening a menu first.
 - Restored the intentionally awkward face-down-only credits: no menu item, no instruction entry, no tap dismissal, and the credits vanish immediately when the device turns face-up.
 - Refined board menus into Board > File and Board > Underlays, with Mac-like file ordering.
 - Added The Wheel, Looney Ludo four-board start, and Launchpad 23 underlays plus optional grid snapping.

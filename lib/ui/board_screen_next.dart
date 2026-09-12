@@ -685,6 +685,15 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   }
 
   void _onPointerDown(PointerDownEvent event) {
+    // Safari will not expose motion data until permission is requested from a
+    // real user gesture. Piggyback that handshake on the first ordinary board
+    // touch so the face-down behavior stays undisclosed in the interface.
+    if (kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.iOS &&
+        !_motionPermissionAttempted) {
+      unawaited(_ensureMotionPermission());
+    }
+
     if (_creditsVisible ||
         event.kind != PointerDeviceKind.mouse ||
         event.buttons != kPrimaryMouseButton) {
