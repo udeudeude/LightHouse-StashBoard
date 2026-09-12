@@ -1,0 +1,1 @@
+double currentWebOrientationAngle() => 0;
