@@ -2,16 +2,15 @@
 
 ## Unreleased
 
-- iPhone/iPad web now preserves the board's opening physical orientation and compensates for Safari viewport rotation instead of relying on browser orientation lock support.
-- On iPhone web, motion permission is now requested from the first ordinary board touch rather than requiring the hidden credits behavior to depend on opening a menu first.
-- Restored the intentionally awkward face-down-only credits: no menu item, no instruction entry, no tap dismissal, and the credits vanish immediately when the device turns face-up.
+- Reworked iPhone/iPad web orientation handling: Safari orientation changes are now observed directly, rechecked after viewport changes, and polled as a fallback; the frozen opening board counter-rotates so the physical play surface and touch hit testing stay fixed to the glass.
+- Reworked iPhone/iPad web face-down credits to use a direct browser Device Motion bridge with gravity data after permission is granted; the face-up Z-axis sign is learned from stable samples, credits appear only while face-down, and vanish when face-up.
+- Moved rotation-snap degree ticks flush against the inside edge of the hollow menu circle.
+- Changed Light Lottery to a completely regular 120 ms flashing cadence while randomizing which single footprint flashes on each beat and randomizing the total run time before the winner is selected.
+- Added a Toys submenu with persistent on/off visibility controls for Light Lottery and Entropy Delete; each enabled toy has its own tappable board icon.
 - Refined board menus into Board > File and Board > Underlays, with Mac-like file ordering.
 - Added The Wheel, Looney Ludo four-board start, and Launchpad 23 underlays plus optional grid snapping.
 - Added exact rotation controls and persistent rotation snap increments, reflected by tick marks in the menu circle.
 - Moved the menu and device-specific instructions to the lower left.
-- Added a light-lottery animation and optional 30-second random fade/delete entropy control.
-- Added iOS web motion-permission support for face-down credits; credits now remain visible after the device returns face-up until dismissed.
-- Native mobile keeps a hard orientation lock; iOS Safari exposes orientation-lock guidance because browsers cannot reliably force it.
 - Removed the user-facing Structure menu while retaining structure semantics internally.
 
 ## 0.3.1 - 2026-09-09
