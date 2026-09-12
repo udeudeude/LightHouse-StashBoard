@@ -33,6 +33,16 @@
         return false;
       }
     };
+
+    window.lighthouseOrientationAngle = function () {
+      if (typeof window.orientation === 'number') {
+        return window.orientation;
+      }
+      if (screen.orientation && typeof screen.orientation.angle === 'number') {
+        return screen.orientation.angle;
+      }
+      return 0;
+    };
   </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
