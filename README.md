@@ -42,6 +42,7 @@ The web build requires manual physical calibration because browsers do not relia
 - optional Entropy Delete mode that fades and removes one random footprint every 30 seconds
 - deliberately hidden face-down-only credits on supported motion-enabled devices; they vanish the instant the device is face-up
 - native mobile orientation lock; iPhone/iPad web freezes the opening board frame and compensates for Safari viewport rotation so the physical play surface stays fixed to the glass
+- web orientation compensation is rendering-only; saved millimeter coordinates and calibration do not change when the device turns
 - screen-awake behavior, native application-brightness control, haptics, and safe-board insets
 - installable PWA metadata and iOS Add-to-Home-Screen guidance
 - generated iOS, Android, and web platform runners
