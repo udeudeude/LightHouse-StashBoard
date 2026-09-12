@@ -40,7 +40,7 @@ The web build requires manual physical calibration because browsers do not relia
 - device-specific instructions shown from the lower left
 - Light Lottery theatrical random chooser
 - optional Entropy Delete mode that fades and removes one random footprint every 30 seconds
-- hidden face-down-only credits on supported motion-enabled devices; they vanish the instant the device is face-up
+- deliberately hidden face-down-only credits on supported motion-enabled devices; they vanish the instant the device is face-up
 - native mobile orientation lock; web builds explain the browser limitation and defer to the device's rotation lock
 - screen-awake behavior, native application-brightness control, haptics, and safe-board insets
 - installable PWA metadata and iOS Add-to-Home-Screen guidance
