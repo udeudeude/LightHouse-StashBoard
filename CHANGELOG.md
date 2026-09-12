@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- iPhone/iPad web now preserves the board's opening physical orientation and compensates for Safari viewport rotation instead of relying on browser orientation lock support.
 - On iPhone web, motion permission is now requested from the first ordinary board touch rather than requiring the hidden credits behavior to depend on opening a menu first.
 - Restored the intentionally awkward face-down-only credits: no menu item, no instruction entry, no tap dismissal, and the credits vanish immediately when the device turns face-up.
 - Refined board menus into Board > File and Board > Underlays, with Mac-like file ordering.

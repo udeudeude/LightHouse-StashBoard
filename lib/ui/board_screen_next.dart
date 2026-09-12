@@ -19,6 +19,7 @@ import '../domain/geometry.dart';
 import '../domain/light_element.dart';
 import '../domain/physical_point.dart';
 import '../platform/motion_permission.dart';
+import '../platform/web_orientation.dart';
 import 'board_painter.dart';
 
 class BoardScreenNext extends StatefulWidget {
@@ -70,6 +71,10 @@ class _BoardScreenNextState extends State<BoardScreenNext>
 
   double _brightness = 1.0;
   bool _orientationLocked = false;
+  Size? _webBoardSize;
+  EdgeInsets? _webBoardPadding;
+  EdgeInsets? _webBoardViewPadding;
+  double? _webReferenceOrientationAngle;
   double? _rotationSnapDegrees;
   bool _gridSnapEnabled = false;
   bool _transformTranslated = false;
@@ -112,6 +117,13 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      final media = MediaQuery.of(context);
+      _webBoardSize ??= media.size;
+      _webBoardPadding ??= media.padding;
+      _webBoardViewPadding ??= media.viewPadding;
+      _webReferenceOrientationAngle ??= currentWebOrientationAngle();
+    }
     if (_orientationLocked || kIsWeb) return;
     _orientationLocked = true;
     final orientation = MediaQuery.orientationOf(context);
@@ -122,6 +134,14 @@ class _BoardScreenNextState extends State<BoardScreenNext>
           ? DeviceOrientation.portraitUp
           : DeviceOrientation.landscapeLeft,
     ]);
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (!kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -272,8 +292,8 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     if (targetId == null) return null;
     final target = _controller.state.elementById(targetId);
     if (target == null || !_controller.state.underlay.isVisible) return null;
-    final mediaSize = MediaQuery.sizeOf(context);
-    final padding = MediaQuery.viewPaddingOf(context);
+    final mediaSize = _webBoardSize ?? MediaQuery.sizeOf(context);
+    final padding = _webBoardViewPadding ?? MediaQuery.viewPaddingOf(context);
     final widthPx = mediaSize.width - padding.horizontal;
     final heightPx = mediaSize.height - padding.vertical;
     return _controller.state.underlay.nearestSnapPoint(
@@ -1031,7 +1051,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
           nativeMobile
               ? 'LightHouse locks the board to one device orientation while it is open.'
               : defaultTargetPlatform == TargetPlatform.iOS
-              ? 'The iPhone/iPad web browser does not expose a reliable page orientation lock. The native LightHouse app can lock orientation.'
+              ? 'Safari may rotate its viewport, but LightHouse freezes the board in the orientation where it opened and compensates for later turns so the play surface stays fixed to the glass.'
               : 'Orientation locking depends on browser and platform support. The native mobile app locks the board while it is open.',
         ),
       ),
@@ -1335,7 +1355,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   }
 
   Widget _instructionsPane() {
-    final size = MediaQuery.sizeOf(context);
+    final size = _webBoardSize ?? MediaQuery.sizeOf(context);
     final isDesktop =
         kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.macOS ||
@@ -1529,65 +1549,118 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     ),
   );
 
+  Widget _buildBoardSurface(BuildContext surfaceContext) {
+    final safePadding = MediaQuery.viewPaddingOf(surfaceContext);
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Padding(
+          padding: safePadding,
+          child: Listener(
+            onPointerDown: _onPointerDown,
+            onPointerMove: _onPointerMove,
+            onPointerUp: _onPointerUp,
+            onPointerCancel: _onPointerCancel,
+            onPointerSignal: _onPointerSignal,
+            onPointerPanZoomStart: _onPointerPanZoomStart,
+            onPointerPanZoomUpdate: _onPointerPanZoomUpdate,
+            onPointerPanZoomEnd: _onPointerPanZoomEnd,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onDoubleTapDown: _handleDoubleTapDown,
+              onScaleStart: _onScaleStart,
+              onScaleUpdate: _onScaleUpdate,
+              onScaleEnd: _onScaleEnd,
+              child: CustomPaint(
+                painter: BoardPainter(
+                  state: _controller.state,
+                  logicalPixelsPerMm: widget.logicalPixelsPerMm,
+                  geometry: _controller.geometry,
+                  selectedId: _selectedId,
+                  elementOpacities: _effectOpacities,
+                  burstCenter: _burstCenter,
+                  burstProgress: _burstProgress,
+                ),
+                child: const SizedBox.expand(),
+              ),
+            ),
+          ),
+        ),
+        SafeArea(
+          child: Align(
+            alignment: Alignment.bottomLeft,
+            child: Padding(padding: const EdgeInsets.all(8), child: _menu()),
+          ),
+        ),
+        SafeArea(
+          child: Align(
+            alignment: Alignment.bottomRight,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: _randomizerControls(),
+            ),
+          ),
+        ),
+        if (_instructionsVisible) _instructionsPane(),
+        if (_creditsVisible) Positioned.fill(child: _credits()),
+      ],
+    );
+  }
+
+  double _webBoardRotationRadians() {
+    final reference = _webReferenceOrientationAngle;
+    if (reference == null) return 0;
+    final raw = currentWebOrientationAngle() - reference;
+    final normalized = ((raw % 360) + 360) % 360;
+    final quarterTurns = (normalized / 90).round() % 4;
+    return quarterTurns * math.pi / 2;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final safePadding = MediaQuery.viewPaddingOf(context);
+    final compensateForSafari =
+        kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.iOS &&
+        _webBoardSize != null;
+
+    if (!compensateForSafari) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: _buildBoardSurface(context),
+      );
+    }
+
+    final frozenSize = _webBoardSize!;
+    final currentMedia = MediaQuery.of(context);
+    final frozenMedia = currentMedia.copyWith(
+      size: frozenSize,
+      padding: _webBoardPadding ?? currentMedia.padding,
+      viewPadding: _webBoardViewPadding ?? currentMedia.viewPadding,
+    );
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          Padding(
-            padding: safePadding,
-            child: Listener(
-              onPointerDown: _onPointerDown,
-              onPointerMove: _onPointerMove,
-              onPointerUp: _onPointerUp,
-              onPointerCancel: _onPointerCancel,
-              onPointerSignal: _onPointerSignal,
-              onPointerPanZoomStart: _onPointerPanZoomStart,
-              onPointerPanZoomUpdate: _onPointerPanZoomUpdate,
-              onPointerPanZoomEnd: _onPointerPanZoomEnd,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onDoubleTapDown: _handleDoubleTapDown,
-                onScaleStart: _onScaleStart,
-                onScaleUpdate: _onScaleUpdate,
-                onScaleEnd: _onScaleEnd,
-                child: CustomPaint(
-                  painter: BoardPainter(
-                    state: _controller.state,
-                    logicalPixelsPerMm: widget.logicalPixelsPerMm,
-                    geometry: _controller.geometry,
-                    selectedId: _selectedId,
-                    elementOpacities: _effectOpacities,
-                    burstCenter: _burstCenter,
-                    burstProgress: _burstProgress,
-                  ),
-                  child: const SizedBox.expand(),
-                ),
+      body: ClipRect(
+        child: OverflowBox(
+          alignment: Alignment.center,
+          minWidth: 0,
+          minHeight: 0,
+          maxWidth: double.infinity,
+          maxHeight: double.infinity,
+          child: Transform.rotate(
+            angle: _webBoardRotationRadians(),
+            transformHitTests: true,
+            child: SizedBox(
+              width: frozenSize.width,
+              height: frozenSize.height,
+              child: MediaQuery(
+                data: frozenMedia,
+                child: Builder(builder: _buildBoardSurface),
               ),
             ),
           ),
-          SafeArea(
-            child: Align(
-              alignment: Alignment.bottomLeft,
-              child: Padding(padding: const EdgeInsets.all(8), child: _menu()),
-            ),
-          ),
-          SafeArea(
-            child: Align(
-              alignment: Alignment.bottomRight,
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: _randomizerControls(),
-              ),
-            ),
-          ),
-          if (_instructionsVisible) _instructionsPane(),
-          if (_creditsVisible) Positioned.fill(child: _credits()),
-        ],
+        ),
       ),
     );
   }
