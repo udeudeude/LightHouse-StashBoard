@@ -1,0 +1,54 @@
+name: Apply physical UI fixes v3
+
+on:
+  push:
+    branches: [lighthouse-2-rewrite]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: lighthouse-2-rewrite
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.0'
+      - name: Run staged patch
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          source = Path('.github/workflows/physical-ui-fix-v2.yml').read_text()
+          marker = "          python3 <<'PY'\n"
+          start = source.index(marker) + len(marker)
+          end = source.index("\n          PY\n", start)
+          script = textwrap.dedent(source[start:end])
+          exec(compile(script, 'physical-ui-fix-v2', 'exec'), {'__name__': '__main__'})
+          PY
+      - name: Verify
+        shell: bash
+        run: |
+          dart format lib test
+          dart format --output=none --set-exit-if-changed lib test
+          flutter pub get
+          flutter analyze
+          flutter test
+      - name: Commit
+        shell: bash
+        run: |
+          rm -f .github/workflows/physical-ui-fix-v2.yml
+          rm -f .github/workflows/physical-ui-fix-v3.yml
+          rm -f .github/physical-ui-fix-v3.trigger
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: physical orientation motion and toy controls"
+          git push
