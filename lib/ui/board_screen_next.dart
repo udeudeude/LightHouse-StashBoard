@@ -220,9 +220,10 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     if (!faceDown) {
       _faceDownTimer?.cancel();
       _faceDownTimer = null;
-      // Keep credits visible after the device comes face-up so the easter egg
-      // can actually be seen. Once dismissed while face-up, arm it again.
-      if (!_creditsVisible) _faceDownLatched = false;
+      _faceDownLatched = false;
+      if (_creditsVisible && mounted) {
+        setState(() => _creditsVisible = false);
+      }
       return;
     }
     if (_faceDownLatched || _faceDownTimer != null) return;
@@ -1290,11 +1291,6 @@ class _BoardScreenNextState extends State<BoardScreenNext>
               onPressed: _showOrientationLockInfo,
               child: const Text('Orientation Lock'),
             ),
-            if (kIsWeb && defaultTargetPlatform == TargetPlatform.iOS)
-              MenuItemButton(
-                onPressed: () => _ensureMotionPermission(force: true),
-                child: const Text('Enable Face-down Credits'),
-              ),
             if (kIsWeb)
               MenuItemButton(
                 onPressed: _showWebInstallHelp,
@@ -1372,11 +1368,6 @@ class _BoardScreenNextState extends State<BoardScreenNext>
             ('Grid snap', 'Menu > Board > Underlays > Snap pieces to underlay'),
             ('Light lottery', 'Tap the starburst button at lower right'),
             ('Entropy', 'Toggle the small deletion control at lower right'),
-            if (isIos && kIsWeb)
-              (
-                'Face-down credits',
-                'Tap the menu once, allow Motion & Orientation access, then turn the device screen-down',
-              ),
           ];
 
     return SafeArea(
@@ -1490,7 +1481,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
 
   Widget _credits() => GestureDetector(
     behavior: HitTestBehavior.opaque,
-    onTap: () => setState(() => _creditsVisible = false),
+    onTap: null,
     child: ColoredBox(
       color: Colors.black,
       child: SafeArea(
@@ -1520,12 +1511,6 @@ class _BoardScreenNextState extends State<BoardScreenNext>
                   'Project: udeudeude\nSoftware: Flutter + ChatGPT\nLooney Pyramids: Looney Labs\nOpen source under the MIT License',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white54, height: 1.6),
-                ),
-                SizedBox(height: 28),
-                Text(
-                  'Triggered by turning the device face-down.\nTap anywhere to return.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white38, fontSize: 12),
                 ),
               ],
             ),

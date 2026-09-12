@@ -40,7 +40,7 @@ The web build requires manual physical calibration because browsers do not relia
 - device-specific instructions shown from the lower left
 - Light Lottery theatrical random chooser
 - optional Entropy Delete mode that fades and removes one random footprint every 30 seconds
-- face-down credits on supported motion-enabled devices, including iOS web permission handling
+- hidden face-down-only credits on supported motion-enabled devices; they vanish the instant the device is face-up
 - native mobile orientation lock; web builds explain the browser limitation and defer to the device's rotation lock
 - screen-awake behavior, native application-brightness control, haptics, and safe-board insets
 - installable PWA metadata and iOS Add-to-Home-Screen guidance
@@ -69,7 +69,7 @@ Board controls:
 - Board > File: New, Open, Save, Save a Copy, Rename, JSON import/export
 - Board > Underlays: choose an underlay and optionally enable position snapping
 - Edit > Rotation: rotate in 15-degree steps, choose an exact orientation, or enable persistent rotation snapping
-- Display: size/calibration, brightness, orientation information, and face-down-credits permission where required
+- Display: size/calibration, brightness, and orientation information
 
 The user-facing Structure menu was removed. Stack/nest relationships remain an internal board concept so physically grouped footprints still move, push, save, restore, and undo correctly.
 
