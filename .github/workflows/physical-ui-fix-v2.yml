@@ -1,0 +1,727 @@
+name: Apply physical UI fixes v2
+
+on:
+  push:
+    branches: [lighthouse-2-rewrite]
+    paths:
+      - .github/workflows/physical-ui-fix-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: lighthouse-2-rewrite
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.0'
+      - name: Apply fixes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          # Browser bridge: cache Safari orientation changes and read motion directly.
+          path = Path('web/index.html')
+          text = path.read_text()
+          old = '''  <script>
+            window.lighthouseRequestMotionPermission = async function () {
+              try {
+                if (typeof DeviceMotionEvent !== 'undefined' &&
+                    typeof DeviceMotionEvent.requestPermission === 'function') {
+                  return (await DeviceMotionEvent.requestPermission()) === 'granted';
+                }
+                return true;
+              } catch (_) {
+                return false;
+              }
+            };
+
+            window.lighthouseOrientationAngle = function () {
+              if (typeof window.orientation === 'number') {
+                return window.orientation;
+              }
+              if (screen.orientation && typeof screen.orientation.angle === 'number') {
+                return screen.orientation.angle;
+              }
+              return 0;
+            };
+          </script>'''
+          new = '''  <script>
+            const lighthouseOrientationState = { angle: 0 };
+            const lighthouseMotionState = {
+              x: Number.NaN,
+              y: Number.NaN,
+              z: Number.NaN,
+              installed: false,
+            };
+
+            function lighthouseNormalizeQuarterTurn(angle) {
+              const normalized = ((Number(angle) % 360) + 360) % 360;
+              return (Math.round(normalized / 90) * 90) % 360;
+            }
+
+            function lighthouseReadOrientationAngle() {
+              if (typeof window.orientation === 'number') {
+                return lighthouseNormalizeQuarterTurn(window.orientation);
+              }
+              if (screen.orientation && typeof screen.orientation.angle === 'number') {
+                return lighthouseNormalizeQuarterTurn(screen.orientation.angle);
+              }
+              return window.innerWidth > window.innerHeight ? 90 : 0;
+            }
+
+            function lighthouseUpdateOrientation() {
+              lighthouseOrientationState.angle = lighthouseReadOrientationAngle();
+            }
+
+            function lighthouseInstallMotionListener() {
+              if (lighthouseMotionState.installed) return;
+              lighthouseMotionState.installed = true;
+              window.addEventListener('devicemotion', function (event) {
+                const acceleration = event.accelerationIncludingGravity;
+                if (!acceleration) return;
+                lighthouseMotionState.x = Number(acceleration.x);
+                lighthouseMotionState.y = Number(acceleration.y);
+                lighthouseMotionState.z = Number(acceleration.z);
+              }, { passive: true });
+            }
+
+            lighthouseUpdateOrientation();
+            window.addEventListener('orientationchange', function () {
+              lighthouseUpdateOrientation();
+              window.setTimeout(lighthouseUpdateOrientation, 80);
+              window.setTimeout(lighthouseUpdateOrientation, 300);
+            });
+            window.addEventListener('resize', lighthouseUpdateOrientation, { passive: true });
+
+            window.lighthouseOrientationAngle = function () {
+              return lighthouseOrientationState.angle;
+            };
+
+            window.lighthouseRequestMotionPermission = async function () {
+              try {
+                let granted = true;
+                if (typeof DeviceMotionEvent !== 'undefined' &&
+                    typeof DeviceMotionEvent.requestPermission === 'function') {
+                  granted = (await DeviceMotionEvent.requestPermission()) === 'granted';
+                }
+                if (granted) lighthouseInstallMotionListener();
+                return granted;
+              } catch (_) {
+                return false;
+              }
+            };
+
+            window.lighthouseMotionX = function () { return lighthouseMotionState.x; };
+            window.lighthouseMotionY = function () { return lighthouseMotionState.y; };
+            window.lighthouseMotionZ = function () { return lighthouseMotionState.z; };
+          </script>'''
+          if old not in text:
+              raise SystemExit('index.html bridge block not found')
+          path.write_text(text.replace(old, new))
+
+          # Direct Safari motion bridge.
+          Path('lib/platform/motion_permission_web.dart').write_text('''import 'dart:js_interop';
+
+@JS('lighthouseRequestMotionPermission')
+external JSPromise<JSBoolean> _requestMotionPermission();
+
+@JS('lighthouseMotionX')
+external JSNumber _motionX();
+
+@JS('lighthouseMotionY')
+external JSNumber _motionY();
+
+@JS('lighthouseMotionZ')
+external JSNumber _motionZ();
+
+Future<bool> requestWebMotionPermission() async {
+  try {
+    final result = await _requestMotionPermission().toDart;
+    return result.toDart;
+  } on Object {
+    return false;
+  }
+}
+
+({double x, double y, double z})? currentWebMotionSample() {
+  try {
+    final x = _motionX().toDartDouble;
+    final y = _motionY().toDartDouble;
+    final z = _motionZ().toDartDouble;
+    if (!x.isFinite || !y.isFinite || !z.isFinite) return null;
+    return (x: x, y: y, z: z);
+  } on Object {
+    return null;
+  }
+}
+''')
+          Path('lib/platform/motion_permission_stub.dart').write_text('''Future<bool> requestWebMotionPermission() async => true;
+
+({double x, double y, double z})? currentWebMotionSample() => null;
+''')
+
+          path = Path('lib/ui/board_screen_next.dart')
+          text = path.read_text()
+
+          def replace_once(old, new, label):
+              global text
+              if old not in text:
+                  raise SystemExit(f'{label} not found')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+          '''  double? _webReferenceOrientationAngle;
+          double? _rotationSnapDegrees;''',
+          '''  double? _webReferenceOrientationAngle;
+          double? _webObservedOrientationAngle;
+          Timer? _webOrientationPollTimer;
+          double? _rotationSnapDegrees;''',
+          'web orientation fields')
+
+          replace_once(
+          '''  bool _randomizerRunning = false;
+          bool _entropyEnabled = false;
+          Timer? _entropyTimer;''',
+          '''  bool _randomizerRunning = false;
+          bool _entropyEnabled = false;
+          bool _lightLotteryToyVisible = true;
+          bool _entropyToyVisible = true;
+          Timer? _entropyTimer;''',
+          'toy fields')
+
+          replace_once(
+          '''  StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
+          Timer? _faceDownTimer;
+          bool _faceDownLatched = false;''',
+          '''  StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
+          Timer? _webMotionTimer;
+          Timer? _faceDownTimer;
+          bool _faceDownLatched = false;''',
+          'motion timer fields')
+
+          replace_once(
+          '''  bool _motionPermissionAttempted = false;
+          double? _faceUpZSign;''',
+          '''  bool _motionPermissionAttempted = false;
+          double? _faceUpZSign;
+          double? _faceUpCandidateSign;
+          int _faceUpStableSamples = 0;''',
+          'motion calibration fields')
+
+          old = '''  @override
+          void didChangeDependencies() {
+            super.didChangeDependencies();
+            if (kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+              final media = MediaQuery.of(context);
+              _webBoardSize ??= media.size;
+              _webBoardPadding ??= media.padding;
+              _webBoardViewPadding ??= media.viewPadding;
+              _webReferenceOrientationAngle ??= currentWebOrientationAngle();
+            }
+            if (_orientationLocked || kIsWeb) return;
+            _orientationLocked = true;
+            final orientation = MediaQuery.orientationOf(context);
+            // A physical board must not rotate underneath pieces. Lock to one exact
+            // interface orientation rather than allowing its 180-degree counterpart.
+            SystemChrome.setPreferredOrientations([
+              orientation == Orientation.portrait
+                  ? DeviceOrientation.portraitUp
+                  : DeviceOrientation.landscapeLeft,
+            ]);
+          }
+
+          @override
+          void didChangeMetrics() {
+            if (!kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() {});
+            });
+          }'''
+          new = '''  @override
+          void didChangeDependencies() {
+            super.didChangeDependencies();
+            if (kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+              final media = MediaQuery.of(context);
+              _webBoardSize ??= media.size;
+              _webBoardPadding ??= media.padding;
+              _webBoardViewPadding ??= media.viewPadding;
+              final angle = currentWebOrientationAngle();
+              _webReferenceOrientationAngle ??= angle;
+              _webObservedOrientationAngle ??= angle;
+              _webOrientationPollTimer ??= Timer.periodic(
+                const Duration(milliseconds: 120),
+                (_) => _pollWebOrientation(),
+              );
+            }
+            if (_orientationLocked || kIsWeb) return;
+            _orientationLocked = true;
+            final orientation = MediaQuery.orientationOf(context);
+            // A physical board must not rotate underneath pieces. Lock to one exact
+            // interface orientation rather than allowing its 180-degree counterpart.
+            SystemChrome.setPreferredOrientations([
+              orientation == Orientation.portrait
+                  ? DeviceOrientation.portraitUp
+                  : DeviceOrientation.landscapeLeft,
+            ]);
+          }
+
+          void _pollWebOrientation() {
+            if (!mounted || !kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) {
+              return;
+            }
+            final angle = currentWebOrientationAngle();
+            if (angle == _webObservedOrientationAngle) return;
+            setState(() => _webObservedOrientationAngle = angle);
+          }
+
+          @override
+          void didChangeMetrics() {
+            if (!kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _webObservedOrientationAngle = currentWebOrientationAngle();
+                setState(() {});
+              }
+            });
+            Future<void>.delayed(const Duration(milliseconds: 100), () {
+              if (mounted) _pollWebOrientation();
+            });
+            Future<void>.delayed(const Duration(milliseconds: 340), () {
+              if (mounted) _pollWebOrientation();
+            });
+          }'''
+          replace_once(old, new, 'orientation lifecycle')
+
+          replace_once(
+          '''    _faceDownTimer?.cancel();
+            _desktopScrollEndTimer?.cancel();''',
+          '''    _faceDownTimer?.cancel();
+            _webMotionTimer?.cancel();
+            _webOrientationPollTimer?.cancel();
+            _desktopScrollEndTimer?.cancel();''',
+          'dispose timers')
+
+          old = '''  void _startFaceDownMonitoring() {
+            if (defaultTargetPlatform != TargetPlatform.iOS &&
+                defaultTargetPlatform != TargetPlatform.android) {
+              return;
+            }
+            if (_accelerometerSubscription != null) return;
+            _accelerometerSubscription = accelerometerEventStream(
+              samplingPeriod: const Duration(milliseconds: 160),
+            ).listen(_handleAccelerometer, onError: (_) {});
+          }'''
+          new = '''  void _startFaceDownMonitoring() {
+            if (defaultTargetPlatform != TargetPlatform.iOS &&
+                defaultTargetPlatform != TargetPlatform.android) {
+              return;
+            }
+            if (kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+              _startWebMotionMonitoring();
+              return;
+            }
+            if (_accelerometerSubscription != null) return;
+            _accelerometerSubscription = accelerometerEventStream(
+              samplingPeriod: const Duration(milliseconds: 140),
+            ).listen(_handleAccelerometer, onError: (_) {});
+          }
+
+          void _startWebMotionMonitoring() {
+            if (!kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+            _webMotionTimer?.cancel();
+            _webMotionTimer = Timer.periodic(
+              const Duration(milliseconds: 120),
+              (_) {
+                final sample = currentWebMotionSample();
+                if (sample != null) {
+                  _handleAcceleration(sample.x, sample.y, sample.z);
+                }
+              },
+            );
+          }'''
+          replace_once(old, new, 'start face-down monitoring')
+
+          replace_once(
+          '''    if (granted) {
+              _startFaceDownMonitoring();
+            } else if (force) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Motion access was not granted. Safari requires Motion & Orientation access for face-down credits.',
+                  ),
+                ),
+              );
+            }''',
+          '''    if (granted) {
+              _startWebMotionMonitoring();
+            } else if (force) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Motion access was not granted.')),
+              );
+            }''',
+          'web permission handling')
+
+          old = '''  void _handleAccelerometer(AccelerometerEvent event) {
+            final zDominant =
+                event.z.abs() > 7.0 &&
+                event.z.abs() > event.x.abs() * 1.2 &&
+                event.z.abs() > event.y.abs() * 1.2;
+            if (!zDominant) {
+              _faceDownTimer?.cancel();
+              _faceDownTimer = null;
+              return;
+            }
+
+            // Learn the face-up sign from the first flat reading. This avoids relying
+            // on platform-specific accelerometer sign conventions, which differ
+            // between native and browser sensor implementations.
+            _faceUpZSign ??= event.z.sign;
+            final faceDown = event.z.sign != _faceUpZSign;
+
+            if (!faceDown) {
+              _faceDownTimer?.cancel();
+              _faceDownTimer = null;
+              _faceDownLatched = false;
+              if (_creditsVisible && mounted) {
+                setState(() => _creditsVisible = false);
+              }
+              return;
+            }
+            if (_faceDownLatched || _faceDownTimer != null) return;
+
+            _faceDownTimer = Timer(const Duration(milliseconds: 450), () {
+              _faceDownTimer = null;
+              if (!mounted) return;
+              _faceDownLatched = true;
+              setState(() => _creditsVisible = true);
+            });
+          }'''
+          new = '''  void _handleAccelerometer(AccelerometerEvent event) {
+            _handleAcceleration(event.x, event.y, event.z);
+          }
+
+          void _handleAcceleration(double x, double y, double z) {
+            final zDominant =
+                z.abs() > 6.0 && z.abs() > x.abs() * 1.05 && z.abs() > y.abs() * 1.05;
+            if (!zDominant) {
+              _faceDownTimer?.cancel();
+              _faceDownTimer = null;
+              return;
+            }
+
+            final sign = z.sign;
+            if (_faceUpZSign == null) {
+              if (_faceUpCandidateSign == sign) {
+                _faceUpStableSamples += 1;
+              } else {
+                _faceUpCandidateSign = sign;
+                _faceUpStableSamples = 1;
+              }
+              // Permission is requested while the user is touching the face-up
+              // board. Require several stable flat readings before learning the
+              // platform's Z-axis sign so one noisy sample cannot invert the secret.
+              if (_faceUpStableSamples >= 3) {
+                _faceUpZSign = sign;
+              }
+              return;
+            }
+
+            final faceDown = sign != _faceUpZSign;
+            if (!faceDown) {
+              _faceDownTimer?.cancel();
+              _faceDownTimer = null;
+              _faceDownLatched = false;
+              if (_creditsVisible && mounted) {
+                setState(() => _creditsVisible = false);
+              }
+              return;
+            }
+            if (_faceDownLatched || _faceDownTimer != null) return;
+
+            _faceDownTimer = Timer(const Duration(milliseconds: 360), () {
+              _faceDownTimer = null;
+              if (!mounted) return;
+              _faceDownLatched = true;
+              setState(() => _creditsVisible = true);
+            });
+          }'''
+          replace_once(old, new, 'motion handler')
+
+          replace_once(
+          '''      _gridSnapEnabled =
+                  preferences.getBool('lighthouse.gridSnapEnabled.v1') ?? false;
+            });''',
+          '''      _gridSnapEnabled =
+                  preferences.getBool('lighthouse.gridSnapEnabled.v1') ?? false;
+              _lightLotteryToyVisible =
+                  preferences.getBool('lighthouse.toy.lightLottery.visible.v1') ?? true;
+              _entropyToyVisible =
+                  preferences.getBool('lighthouse.toy.entropy.visible.v1') ?? true;
+            });''',
+          'load toy preferences')
+
+          insert_after = '''  Future<void> _toggleGridSnap() async {
+            setState(() => _gridSnapEnabled = !_gridSnapEnabled);
+            final preferences = await SharedPreferences.getInstance();
+            await preferences.setBool(
+              'lighthouse.gridSnapEnabled.v1',
+              _gridSnapEnabled,
+            );
+          }
+          '''
+          addition = '''
+          Future<void> _toggleLightLotteryToyVisibility() async {
+            setState(() => _lightLotteryToyVisible = !_lightLotteryToyVisible);
+            final preferences = await SharedPreferences.getInstance();
+            await preferences.setBool(
+              'lighthouse.toy.lightLottery.visible.v1',
+              _lightLotteryToyVisible,
+            );
+          }
+
+          Future<void> _toggleEntropyToyVisibility() async {
+            if (_entropyToyVisible && _entropyEnabled) {
+              _toggleEntropy();
+            }
+            setState(() => _entropyToyVisible = !_entropyToyVisible);
+            final preferences = await SharedPreferences.getInstance();
+            await preferences.setBool(
+              'lighthouse.toy.entropy.visible.v1',
+              _entropyToyVisible,
+            );
+          }
+          '''
+          if insert_after not in text:
+              raise SystemExit('grid snap insertion point not found')
+          text = text.replace(insert_after, insert_after + addition, 1)
+
+          old = '''    if (!await wait(const Duration(milliseconds: 220))) return;
+            final milliseconds = 3000 + _random.nextInt(7001);
+            final endAt = DateTime.now().add(Duration(milliseconds: milliseconds));
+            while (DateTime.now().isBefore(endAt)) {
+              final elements = _controller.state.elements;
+              if (elements.isEmpty) break;
+              final next = {for (final element in elements) element.id: 0.0};
+              final flashes = math.min(elements.length, 1 + _random.nextInt(4));
+              for (var i = 0; i < flashes; i += 1) {
+                final element = elements[_random.nextInt(elements.length)];
+                next[element.id] = 0.35 + _random.nextDouble() * 0.65;
+              }
+              if (!mounted || generation != _effectGeneration) return;
+              setState(() => _effectOpacities = next);
+              if (!await wait(Duration(milliseconds: 70 + _random.nextInt(180)))) {
+                return;
+              }
+            }'''
+          new = '''    const beat = Duration(milliseconds: 120);
+            if (!await wait(beat)) return;
+            final milliseconds = 3000 + _random.nextInt(7001);
+            final endAt = DateTime.now().add(Duration(milliseconds: milliseconds));
+            String? previousId;
+            while (DateTime.now().isBefore(endAt)) {
+              final elements = _controller.state.elements;
+              if (elements.isEmpty) break;
+              final candidates = previousId == null || elements.length == 1
+                  ? elements
+                  : elements.where((element) => element.id != previousId).toList();
+              final element = candidates[_random.nextInt(candidates.length)];
+              if (!mounted || generation != _effectGeneration) return;
+              setState(() {
+                _effectOpacities = {
+                  for (final current in elements)
+                    current.id: current.id == element.id ? 1.0 : 0.0,
+                };
+              });
+              previousId = element.id;
+              if (!await wait(beat)) return;
+            }'''
+          replace_once(old, new, 'lottery loop')
+
+          replace_once(
+          '''    if (!await wait(const Duration(milliseconds: 320))) return;''',
+          '''    if (!await wait(const Duration(milliseconds: 240))) return;''',
+          'lottery reveal pause')
+
+          marker = '''    final rotationItems = <Widget>[
+          '''
+          toys = '''    final toyItems = <Widget>[
+              MenuItemButton(
+                closeOnActivate: false,
+                leadingIcon: _checkmark(_lightLotteryToyVisible),
+                onPressed: _toggleLightLotteryToyVisibility,
+                child: const Text('Light Lottery'),
+              ),
+              MenuItemButton(
+                closeOnActivate: false,
+                leadingIcon: _checkmark(_entropyToyVisible),
+                onPressed: _toggleEntropyToyVisibility,
+                child: const Text('Entropy Delete'),
+              ),
+            ];
+
+          '''
+          if marker not in text:
+              raise SystemExit('rotationItems marker not found')
+          text = text.replace(marker, toys + marker, 1)
+
+          menu_marker = '''        SubmenuButton(
+              submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
+              menuChildren: [
+                MenuItemButton(
+                  onPressed: _showCalibrationCheck,
+                  child: const Text('Size'),
+                ),'''
+          menu_insert = '''        SubmenuButton(
+              submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
+              menuChildren: toyItems,
+              child: const Text('Toys'),
+            ),
+            SubmenuButton(
+              submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
+              menuChildren: [
+                MenuItemButton(
+                  onPressed: _showCalibrationCheck,
+                  child: const Text('Size'),
+                ),'''
+          replace_once(menu_marker, menu_insert, 'toys menu')
+
+          text = text.replace(
+              "('Light lottery', 'Tap the starburst button at lower right'),",
+              "('Light lottery', 'Enable in Menu > Toys, then tap the starburst button'),")
+          text = text.replace(
+              "('Entropy', 'Toggle the small deletion control at lower right'),",
+              "('Entropy', 'Enable in Menu > Toys, then toggle the deletion control'),")
+
+          old = '''  Widget _randomizerControls() => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: 'Light lottery',
+                onPressed: _randomizerRunning ? null : _runLightRandomizer,
+                icon: Text(
+                  '✦',
+                  style: TextStyle(
+                    color: _randomizerRunning ? Colors.white30 : Colors.white70,
+                    fontSize: 23,
+                    fontWeight: FontWeight.w300,
+                  ),
+                ),
+              ),
+              Semantics(
+                button: true,
+                toggled: _entropyEnabled,
+                label: 'Delete one random footprint every 30 seconds',
+                child: Tooltip(
+                  message: 'Entropy · delete one random footprint every 30 seconds',
+                  child: GestureDetector(
+                    onTap: _toggleEntropy,
+                    behavior: HitTestBehavior.opaque,
+                    child: SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: CustomPaint(
+                        painter: _EntropyControlPainter(enabled: _entropyEnabled),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );'''
+          new = '''  Widget _toyControls() => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_lightLotteryToyVisible)
+                IconButton(
+                  tooltip: 'Light lottery',
+                  onPressed: _randomizerRunning ? null : _runLightRandomizer,
+                  icon: Text(
+                    '✦',
+                    style: TextStyle(
+                      color: _randomizerRunning ? Colors.white30 : Colors.white70,
+                      fontSize: 23,
+                      fontWeight: FontWeight.w300,
+                    ),
+                  ),
+                ),
+              if (_entropyToyVisible)
+                Semantics(
+                  button: true,
+                  toggled: _entropyEnabled,
+                  label: 'Delete one random footprint every 30 seconds',
+                  child: Tooltip(
+                    message: 'Entropy · delete one random footprint every 30 seconds',
+                    child: GestureDetector(
+                      onTap: _toggleEntropy,
+                      behavior: HitTestBehavior.opaque,
+                      child: SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: CustomPaint(
+                          painter: _EntropyControlPainter(enabled: _entropyEnabled),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );'''
+          replace_once(old, new, 'toy controls')
+          text = text.replace('child: _randomizerControls(),', 'child: _toyControls(),', 1)
+
+          old = '''  double _webBoardRotationRadians() {
+            final reference = _webReferenceOrientationAngle;
+            if (reference == null) return 0;
+            final raw = currentWebOrientationAngle() - reference;
+            final normalized = ((raw % 360) + 360) % 360;
+            final quarterTurns = (normalized / 90).round() % 4;
+            return quarterTurns * math.pi / 2;
+          }'''
+          new = '''  double _webBoardRotationRadians() {
+            final reference = _webReferenceOrientationAngle;
+            final current = _webObservedOrientationAngle;
+            if (reference == null || current == null) return 0;
+            final raw = current - reference;
+            final signed = ((raw + 540) % 360) - 180;
+            final quarterTurns = (signed / 90).round();
+            // Safari rotates its coordinate system with the device. Counter-rotate
+            // the frozen board by the inverse amount so it stays fixed to the glass.
+            return -quarterTurns * math.pi / 2;
+          }'''
+          replace_once(old, new, 'inverse web rotation')
+
+          replace_once(
+          '''      final outer = radius - 3;
+              final inner = radius - (i % 2 == 0 ? 6 : 5);''',
+          '''      final outer = radius - 0.35;
+              final inner = radius - (i % 2 == 0 ? 4.5 : 3.5);''',
+          'circle ticks')
+
+          path.write_text(text)
+          PY
+
+      - name: Verify
+        shell: bash
+        run: |
+          dart format lib test
+          dart format --output=none --set-exit-if-changed lib test
+          flutter pub get
+          flutter analyze
+          flutter test
+      - name: Commit
+        shell: bash
+        run: |
+          rm .github/workflows/physical-ui-fix-v2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/index.html lib/platform/motion_permission_web.dart lib/platform/motion_permission_stub.dart lib/ui/board_screen_next.dart .github/workflows/physical-ui-fix-v2.yml
+          git commit -m "fix: physical orientation motion and toy controls"
+          git push
