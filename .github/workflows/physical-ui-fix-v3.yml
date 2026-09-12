@@ -24,13 +24,16 @@ jobs:
         run: |
           python3 <<'PY'
           from pathlib import Path
-          import textwrap
 
           source = Path('.github/workflows/physical-ui-fix-v2.yml').read_text()
           marker = "          python3 <<'PY'\n"
           start = source.index(marker) + len(marker)
           end = source.index("\n          PY\n", start)
-          script = textwrap.dedent(source[start:end])
+          lines = source[start:end].splitlines()
+          script = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in lines
+          )
           exec(compile(script, 'physical-ui-fix-v2', 'exec'), {'__name__': '__main__'})
           PY
       - name: Verify
