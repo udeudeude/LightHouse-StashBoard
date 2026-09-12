@@ -75,6 +75,8 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   EdgeInsets? _webBoardPadding;
   EdgeInsets? _webBoardViewPadding;
   double? _webReferenceOrientationAngle;
+  double? _webObservedOrientationAngle;
+  Timer? _webOrientationPollTimer;
   double? _rotationSnapDegrees;
   bool _gridSnapEnabled = false;
   bool _transformTranslated = false;
@@ -85,17 +87,22 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   double? _burstProgress;
   bool _randomizerRunning = false;
   bool _entropyEnabled = false;
+  bool _lightLotteryToyVisible = true;
+  bool _entropyToyVisible = true;
   Timer? _entropyTimer;
   int _effectGeneration = 0;
   int _entropyGeneration = 0;
 
   StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
+  Timer? _webMotionTimer;
   Timer? _faceDownTimer;
   bool _faceDownLatched = false;
   bool _creditsVisible = false;
   bool _instructionsVisible = false;
   bool _motionPermissionAttempted = false;
   double? _faceUpZSign;
+  double? _faceUpCandidateSign;
+  int _faceUpStableSamples = 0;
 
   @override
   void initState() {
@@ -122,13 +129,17 @@ class _BoardScreenNextState extends State<BoardScreenNext>
       _webBoardSize ??= media.size;
       _webBoardPadding ??= media.padding;
       _webBoardViewPadding ??= media.viewPadding;
-      _webReferenceOrientationAngle ??= currentWebOrientationAngle();
+      final angle = currentWebOrientationAngle();
+      _webReferenceOrientationAngle ??= angle;
+      _webObservedOrientationAngle ??= angle;
+      _webOrientationPollTimer ??= Timer.periodic(
+        const Duration(milliseconds: 120),
+        (_) => _pollWebOrientation(),
+      );
     }
     if (_orientationLocked || kIsWeb) return;
     _orientationLocked = true;
     final orientation = MediaQuery.orientationOf(context);
-    // A physical board must not rotate underneath pieces. Lock to one exact
-    // interface orientation rather than allowing its 180-degree counterpart.
     SystemChrome.setPreferredOrientations([
       orientation == Orientation.portrait
           ? DeviceOrientation.portraitUp
@@ -136,11 +147,29 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     ]);
   }
 
+  void _pollWebOrientation() {
+    if (!mounted || !kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) {
+      return;
+    }
+    final angle = currentWebOrientationAngle();
+    if (angle == _webObservedOrientationAngle) return;
+    setState(() => _webObservedOrientationAngle = angle);
+  }
+
   @override
   void didChangeMetrics() {
     if (!kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() {});
+      if (mounted) {
+        _webObservedOrientationAngle = currentWebOrientationAngle();
+        setState(() {});
+      }
+    });
+    Future<void>.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) _pollWebOrientation();
+    });
+    Future<void>.delayed(const Duration(milliseconds: 340), () {
+      if (mounted) _pollWebOrientation();
     });
   }
 
@@ -160,6 +189,8 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _faceDownTimer?.cancel();
+    _webMotionTimer?.cancel();
+    _webOrientationPollTimer?.cancel();
     _desktopScrollEndTimer?.cancel();
     _entropyTimer?.cancel();
     _effectGeneration += 1;
@@ -192,10 +223,25 @@ class _BoardScreenNextState extends State<BoardScreenNext>
         defaultTargetPlatform != TargetPlatform.android) {
       return;
     }
+    if (kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      _startWebMotionMonitoring();
+      return;
+    }
     if (_accelerometerSubscription != null) return;
     _accelerometerSubscription = accelerometerEventStream(
-      samplingPeriod: const Duration(milliseconds: 160),
+      samplingPeriod: const Duration(milliseconds: 140),
     ).listen(_handleAccelerometer, onError: (_) {});
+  }
+
+  void _startWebMotionMonitoring() {
+    if (!kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+    _webMotionTimer?.cancel();
+    _webMotionTimer = Timer.periodic(const Duration(milliseconds: 120), (_) {
+      final sample = currentWebMotionSample();
+      if (sample != null) {
+        _handleAcceleration(sample.x, sample.y, sample.z);
+      }
+    });
   }
 
   Future<void> _ensureMotionPermission({bool force = false}) async {
@@ -208,35 +254,42 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     final granted = await requestWebMotionPermission();
     if (!mounted) return;
     if (granted) {
-      _startFaceDownMonitoring();
+      _startWebMotionMonitoring();
     } else if (force) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Motion access was not granted. Safari requires Motion & Orientation access for face-down credits.',
-          ),
-        ),
+        const SnackBar(content: Text('Motion access was not granted.')),
       );
     }
   }
 
   void _handleAccelerometer(AccelerometerEvent event) {
+    _handleAcceleration(event.x, event.y, event.z);
+  }
+
+  void _handleAcceleration(double x, double y, double z) {
     final zDominant =
-        event.z.abs() > 7.0 &&
-        event.z.abs() > event.x.abs() * 1.2 &&
-        event.z.abs() > event.y.abs() * 1.2;
+        z.abs() > 6.0 && z.abs() > x.abs() * 1.05 && z.abs() > y.abs() * 1.05;
     if (!zDominant) {
       _faceDownTimer?.cancel();
       _faceDownTimer = null;
       return;
     }
 
-    // Learn the face-up sign from the first flat reading. This avoids relying
-    // on platform-specific accelerometer sign conventions, which differ
-    // between native and browser sensor implementations.
-    _faceUpZSign ??= event.z.sign;
-    final faceDown = event.z.sign != _faceUpZSign;
+    final sign = z.sign;
+    if (_faceUpZSign == null) {
+      if (_faceUpCandidateSign == sign) {
+        _faceUpStableSamples += 1;
+      } else {
+        _faceUpCandidateSign = sign;
+        _faceUpStableSamples = 1;
+      }
+      if (_faceUpStableSamples >= 3) {
+        _faceUpZSign = sign;
+      }
+      return;
+    }
 
+    final faceDown = sign != _faceUpZSign;
     if (!faceDown) {
       _faceDownTimer?.cancel();
       _faceDownTimer = null;
@@ -248,7 +301,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     }
     if (_faceDownLatched || _faceDownTimer != null) return;
 
-    _faceDownTimer = Timer(const Duration(milliseconds: 450), () {
+    _faceDownTimer = Timer(const Duration(milliseconds: 360), () {
       _faceDownTimer = null;
       if (!mounted) return;
       _faceDownLatched = true;
@@ -264,6 +317,10 @@ class _BoardScreenNextState extends State<BoardScreenNext>
       _rotationSnapDegrees = snap != null && snap > 0 ? snap : null;
       _gridSnapEnabled =
           preferences.getBool('lighthouse.gridSnapEnabled.v1') ?? false;
+      _lightLotteryToyVisible =
+          preferences.getBool('lighthouse.toy.lightLottery.visible.v1') ?? true;
+      _entropyToyVisible =
+          preferences.getBool('lighthouse.toy.entropy.visible.v1') ?? true;
     });
   }
 
@@ -283,6 +340,27 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     await preferences.setBool(
       'lighthouse.gridSnapEnabled.v1',
       _gridSnapEnabled,
+    );
+  }
+
+  Future<void> _toggleLightLotteryToyVisibility() async {
+    setState(() => _lightLotteryToyVisible = !_lightLotteryToyVisible);
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(
+      'lighthouse.toy.lightLottery.visible.v1',
+      _lightLotteryToyVisible,
+    );
+  }
+
+  Future<void> _toggleEntropyToyVisibility() async {
+    if (_entropyToyVisible && _entropyEnabled) {
+      _toggleEntropy();
+    }
+    setState(() => _entropyToyVisible = !_entropyToyVisible);
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(
+      'lighthouse.toy.entropy.visible.v1',
+      _entropyToyVisible,
     );
   }
 
@@ -328,25 +406,28 @@ class _BoardScreenNextState extends State<BoardScreenNext>
       return mounted && generation == _effectGeneration;
     }
 
-    if (!await wait(const Duration(milliseconds: 220))) return;
+    const beat = Duration(milliseconds: 120);
+    if (!await wait(beat)) return;
     final milliseconds = 3000 + _random.nextInt(7001);
     final endAt = DateTime.now().add(Duration(milliseconds: milliseconds));
+    String? previousId;
     while (DateTime.now().isBefore(endAt)) {
       final elements = _controller.state.elements;
       if (elements.isEmpty) break;
-      final next = {for (final element in elements) element.id: 0.0};
-      final flashes = math.min(elements.length, 1 + _random.nextInt(4));
-      for (var i = 0; i < flashes; i += 1) {
-        final element = elements[_random.nextInt(elements.length)];
-        next[element.id] = 0.35 + _random.nextDouble() * 0.65;
-      }
+      final candidates = previousId == null || elements.length == 1
+          ? elements
+          : elements.where((element) => element.id != previousId).toList();
+      final element = candidates[_random.nextInt(candidates.length)];
       if (!mounted || generation != _effectGeneration) return;
-      setState(() => _effectOpacities = next);
-      if (!await wait(Duration(milliseconds: 70 + _random.nextInt(180)))) {
-        return;
-      }
+      setState(() {
+        _effectOpacities = {
+          for (final current in elements)
+            current.id: current.id == element.id ? 1.0 : 0.0,
+        };
+      });
+      previousId = element.id;
+      if (!await wait(beat)) return;
     }
-
     final elements = _controller.state.elements;
     if (elements.isEmpty || !mounted || generation != _effectGeneration) {
       if (mounted) {
@@ -361,7 +442,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     setState(() {
       _effectOpacities = {for (final element in elements) element.id: 0};
     });
-    if (!await wait(const Duration(milliseconds: 320))) return;
+    if (!await wait(const Duration(milliseconds: 240))) return;
 
     final winner = elements[_random.nextInt(elements.length)];
     setState(() {
@@ -1215,6 +1296,20 @@ class _BoardScreenNextState extends State<BoardScreenNext>
         ),
     ];
 
+    final toyItems = <Widget>[
+      MenuItemButton(
+        closeOnActivate: false,
+        leadingIcon: _checkmark(_lightLotteryToyVisible),
+        onPressed: _toggleLightLotteryToyVisibility,
+        child: const Text('Light Lottery'),
+      ),
+      MenuItemButton(
+        closeOnActivate: false,
+        leadingIcon: _checkmark(_entropyToyVisible),
+        onPressed: _toggleEntropyToyVisibility,
+        child: const Text('Entropy Delete'),
+      ),
+    ];
     final rotationItems = <Widget>[
       MenuItemButton(
         onPressed: () => _rotateSelected(-15),
@@ -1307,6 +1402,11 @@ class _BoardScreenNextState extends State<BoardScreenNext>
         ),
         SubmenuButton(
           submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
+          menuChildren: toyItems,
+          child: const Text('Toys'),
+        ),
+        SubmenuButton(
+          submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
           menuChildren: [
             MenuItemButton(
               onPressed: _showCalibrationCheck,
@@ -1381,8 +1481,14 @@ class _BoardScreenNextState extends State<BoardScreenNext>
             ('Rotate', 'Hold Shift while two-finger scrolling'),
             ('Exact rotation', 'Menu > Edit > Rotation'),
             ('Grid snap', 'Menu > Board > Underlays > Snap pieces to underlay'),
-            ('Light lottery', 'Tap the starburst button at lower right'),
-            ('Entropy', 'Toggle the small deletion control at lower right'),
+            (
+              'Light lottery',
+              'Enable in Menu > Toys, then tap the starburst button',
+            ),
+            (
+              'Entropy',
+              'Enable in Menu > Toys, then toggle the deletion control',
+            ),
           ]
         : <(String, String)>[
             ('Create / resize / delete', 'Double-tap'),
@@ -1395,8 +1501,14 @@ class _BoardScreenNextState extends State<BoardScreenNext>
             ('Move + rotate', 'Two fingers: drag and twist'),
             ('Exact rotation', 'Menu > Edit > Rotation'),
             ('Grid snap', 'Menu > Board > Underlays > Snap pieces to underlay'),
-            ('Light lottery', 'Tap the starburst button at lower right'),
-            ('Entropy', 'Toggle the small deletion control at lower right'),
+            (
+              'Light lottery',
+              'Enable in Menu > Toys, then tap the starburst button',
+            ),
+            (
+              'Entropy',
+              'Enable in Menu > Toys, then toggle the deletion control',
+            ),
           ];
 
     return SafeArea(
@@ -1471,43 +1583,44 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     );
   }
 
-  Widget _randomizerControls() => Row(
+  Widget _toyControls() => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      IconButton(
-        tooltip: 'Light lottery',
-        onPressed: _randomizerRunning ? null : _runLightRandomizer,
-        icon: Text(
-          '✦',
-          style: TextStyle(
-            color: _randomizerRunning ? Colors.white30 : Colors.white70,
-            fontSize: 23,
-            fontWeight: FontWeight.w300,
+      if (_lightLotteryToyVisible)
+        IconButton(
+          tooltip: 'Light lottery',
+          onPressed: _randomizerRunning ? null : _runLightRandomizer,
+          icon: Text(
+            '✦',
+            style: TextStyle(
+              color: _randomizerRunning ? Colors.white30 : Colors.white70,
+              fontSize: 23,
+              fontWeight: FontWeight.w300,
+            ),
           ),
         ),
-      ),
-      Semantics(
-        button: true,
-        toggled: _entropyEnabled,
-        label: 'Delete one random footprint every 30 seconds',
-        child: Tooltip(
-          message: 'Entropy · delete one random footprint every 30 seconds',
-          child: GestureDetector(
-            onTap: _toggleEntropy,
-            behavior: HitTestBehavior.opaque,
-            child: SizedBox(
-              width: 40,
-              height: 40,
-              child: CustomPaint(
-                painter: _EntropyControlPainter(enabled: _entropyEnabled),
+      if (_entropyToyVisible)
+        Semantics(
+          button: true,
+          toggled: _entropyEnabled,
+          label: 'Delete one random footprint every 30 seconds',
+          child: Tooltip(
+            message: 'Entropy · delete one random footprint every 30 seconds',
+            child: GestureDetector(
+              onTap: _toggleEntropy,
+              behavior: HitTestBehavior.opaque,
+              child: SizedBox(
+                width: 40,
+                height: 40,
+                child: CustomPaint(
+                  painter: _EntropyControlPainter(enabled: _entropyEnabled),
+                ),
               ),
             ),
           ),
         ),
-      ),
     ],
   );
-
   Widget _credits() => GestureDetector(
     behavior: HitTestBehavior.opaque,
     onTap: null,
@@ -1598,7 +1711,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
             alignment: Alignment.bottomRight,
             child: Padding(
               padding: const EdgeInsets.all(8),
-              child: _randomizerControls(),
+              child: _toyControls(),
             ),
           ),
         ),
@@ -1610,11 +1723,12 @@ class _BoardScreenNextState extends State<BoardScreenNext>
 
   double _webBoardRotationRadians() {
     final reference = _webReferenceOrientationAngle;
-    if (reference == null) return 0;
-    final raw = currentWebOrientationAngle() - reference;
-    final normalized = ((raw % 360) + 360) % 360;
-    final quarterTurns = (normalized / 90).round() % 4;
-    return quarterTurns * math.pi / 2;
+    final current = _webObservedOrientationAngle;
+    if (reference == null || current == null) return 0;
+    final raw = current - reference;
+    final signed = ((raw + 540) % 360) - 180;
+    final quarterTurns = (signed / 90).round();
+    return -quarterTurns * math.pi / 2;
   }
 
   @override
@@ -1686,8 +1800,8 @@ class _MenuCirclePainter extends CustomPainter {
     final tickCount = (360 / degrees).round().clamp(4, 24);
     for (var i = 0; i < tickCount; i += 1) {
       final angle = -math.pi / 2 + 2 * math.pi * i / tickCount;
-      final outer = radius - 3;
-      final inner = radius - (i % 2 == 0 ? 6 : 5);
+      final outer = radius - 0.35;
+      final inner = radius - (i % 2 == 0 ? 4.5 : 3.5);
       canvas.drawLine(
         Offset(
           center.dx + inner * math.cos(angle),

@@ -22,27 +22,74 @@
 </head>
 <body style="margin:0;background:#000000;overscroll-behavior:none;touch-action:none;">
   <script>
+    const lighthouseOrientationState = { angle: 0 };
+    const lighthouseMotionState = {
+      x: Number.NaN,
+      y: Number.NaN,
+      z: Number.NaN,
+      installed: false,
+    };
+
+    function lighthouseNormalizeQuarterTurn(angle) {
+      const normalized = ((Number(angle) % 360) + 360) % 360;
+      return (Math.round(normalized / 90) * 90) % 360;
+    }
+
+    function lighthouseReadOrientationAngle() {
+      if (typeof window.orientation === 'number') {
+        return lighthouseNormalizeQuarterTurn(window.orientation);
+      }
+      if (screen.orientation && typeof screen.orientation.angle === 'number') {
+        return lighthouseNormalizeQuarterTurn(screen.orientation.angle);
+      }
+      return window.innerWidth > window.innerHeight ? 90 : 0;
+    }
+
+    function lighthouseUpdateOrientation() {
+      lighthouseOrientationState.angle = lighthouseReadOrientationAngle();
+    }
+
+    function lighthouseInstallMotionListener() {
+      if (lighthouseMotionState.installed) return;
+      lighthouseMotionState.installed = true;
+      window.addEventListener('devicemotion', function (event) {
+        const acceleration = event.accelerationIncludingGravity;
+        if (!acceleration) return;
+        lighthouseMotionState.x = Number(acceleration.x);
+        lighthouseMotionState.y = Number(acceleration.y);
+        lighthouseMotionState.z = Number(acceleration.z);
+      }, { passive: true });
+    }
+
+    lighthouseUpdateOrientation();
+    window.addEventListener('orientationchange', function () {
+      lighthouseUpdateOrientation();
+      window.setTimeout(lighthouseUpdateOrientation, 80);
+      window.setTimeout(lighthouseUpdateOrientation, 300);
+    });
+    window.addEventListener('resize', lighthouseUpdateOrientation, { passive: true });
+
+    window.lighthouseOrientationAngle = function () {
+      return lighthouseOrientationState.angle;
+    };
+
     window.lighthouseRequestMotionPermission = async function () {
       try {
+        let granted = true;
         if (typeof DeviceMotionEvent !== 'undefined' &&
             typeof DeviceMotionEvent.requestPermission === 'function') {
-          return (await DeviceMotionEvent.requestPermission()) === 'granted';
+          granted = (await DeviceMotionEvent.requestPermission()) === 'granted';
         }
-        return true;
+        if (granted) lighthouseInstallMotionListener();
+        return granted;
       } catch (_) {
         return false;
       }
     };
 
-    window.lighthouseOrientationAngle = function () {
-      if (typeof window.orientation === 'number') {
-        return window.orientation;
-      }
-      if (screen.orientation && typeof screen.orientation.angle === 'number') {
-        return screen.orientation.angle;
-      }
-      return 0;
-    };
+    window.lighthouseMotionX = function () { return lighthouseMotionState.x; };
+    window.lighthouseMotionY = function () { return lighthouseMotionState.y; };
+    window.lighthouseMotionZ = function () { return lighthouseMotionState.z; };
   </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
