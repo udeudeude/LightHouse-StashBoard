@@ -52,10 +52,8 @@ class ToyOverlayPainter extends CustomPainter {
   final double? turnTimerProgress;
   final String? scenarioLabel;
 
-  Offset _px(PhysicalPoint point) => Offset(
-    point.xMm * logicalPixelsPerMm,
-    point.yMm * logicalPixelsPerMm,
-  );
+  Offset _px(PhysicalPoint point) =>
+      Offset(point.xMm * logicalPixelsPerMm, point.yMm * logicalPixelsPerMm);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -119,8 +117,16 @@ class ToyOverlayPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
 
     if (overlayMode == 1) {
-      canvas.drawLine(Offset(center.dx, 0), Offset(center.dx, size.height), paint);
-      canvas.drawLine(Offset(0, center.dy), Offset(size.width, center.dy), paint);
+      canvas.drawLine(
+        Offset(center.dx, 0),
+        Offset(center.dx, size.height),
+        paint,
+      );
+      canvas.drawLine(
+        Offset(0, center.dy),
+        Offset(size.width, center.dy),
+        paint,
+      );
       final radius = math.min(size.width, size.height) * 0.22;
       canvas.drawCircle(center, radius, paint);
       canvas.drawCircle(center, radius * 2, paint);
@@ -221,8 +227,12 @@ class ToyOverlayPainter extends CustomPainter {
     for (final element in elements) {
       final progress = raceProgress[element.id];
       if (progress == null) continue;
-      final baseRadius = geometry.baseMm(element.size) * logicalPixelsPerMm * 0.72;
-      final rect = Rect.fromCircle(center: _px(element.position), radius: baseRadius + 7);
+      final baseRadius =
+          geometry.baseMm(element.size) * logicalPixelsPerMm * 0.72;
+      final rect = Rect.fromCircle(
+        center: _px(element.position),
+        radius: baseRadius + 7,
+      );
       final background = Paint()
         ..color = Colors.white.withValues(alpha: 0.12)
         ..style = PaintingStyle.stroke
