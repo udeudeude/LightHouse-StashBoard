@@ -4,8 +4,6 @@ path = Path('scripts/apply_toy_suite_v2.py')
 text = path.read_text()
 
 replacements = {
-    "    _eventZoneTimer?.cancel();\n": "",
-    "    _turnTimer?.cancel();\n": "",
     "_eventZoneProgress = (remaining / 12).clamp(0, 1);": "_eventZoneProgress = (remaining / 12).clamp(0, 1).toDouble();",
     "_turnTimerProgress = (remaining / 30000).clamp(0, 1);": "_turnTimerProgress = (remaining / 30000).clamp(0, 1).toDouble();",
     "var position = projectile.position + projectile.velocity * dt;": "var position = projectile.position + PhysicalPoint(projectile.velocity.xMm * dt, projectile.velocity.yMm * dt);",
@@ -16,7 +14,7 @@ replacements = {
     "                projectiles: _projectiles,\n                impacts: _impacts,": "                projectiles: _projectiles,\n                impacts: _impacts,\n                sideGunsVisible: _activeToys.contains(_ToyKind.sideGuns),\n                cornerGunsVisible: _activeToys.contains(_ToyKind.cornerRicochet) || _projectiles.any((p) => p.ricochet),",
     "    required this.projectiles,\n    required this.impacts,": "    required this.projectiles,\n    required this.impacts,\n    required this.sideGunsVisible,\n    required this.cornerGunsVisible,",
     "  final List<ToyProjectile> projectiles;\n  final List<ToyImpact> impacts;": "  final List<ToyProjectile> projectiles;\n  final List<ToyImpact> impacts;\n  final bool sideGunsVisible;\n  final bool cornerGunsVisible;",
-    "    _paintGuns(canvas, size);": "    _paintGuns(canvas, size);",
+    "board_path.write_text(text)": "text = text.replace('    _eventZoneTimer?.cancel();\\n', '')\ntext = text.replace('    _turnTimer?.cancel();\\n', '')\nboard_path.write_text(text)",
 }
 
 for old, new in replacements.items():
