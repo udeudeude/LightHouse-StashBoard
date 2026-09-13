@@ -29,11 +29,29 @@ jobs:
           import textwrap
 
           source = Path('.github/workflows/toy-suite-v1.yml').read_text()
+          for old, new in {
+              'Icons.autoAwesome': 'Icons.auto_awesome',
+              'Icons.hourglassEmpty': 'Icons.hourglass_empty',
+              'Icons.flagOutlined': 'Icons.flag_outlined',
+              'Icons.gridView': 'Icons.grid_view',
+              'Icons.timerOutlined': 'Icons.timer_outlined',
+              'Icons.filterCenterFocus': 'Icons.filter_center_focus',
+              'Icons.extensionOutlined': 'Icons.extension_outlined',
+              'Icons.casinoOutlined': 'Icons.casino_outlined',
+          }.items():
+              source = source.replace(old, new)
           marker = "          python3 <<'PY'\n"
           start = source.index(marker) + len(marker)
           end = source.index("\n          PY\n", start)
           script = textwrap.dedent(source[start:end])
           exec(compile(script, 'toy-suite-v1', 'exec'), {'__name__': '__main__'})
+
+          target = Path('lib/ui/board_screen_next.dart')
+          code = target.read_text()
+          code = code.replace('math.max(1, (size.width', 'math.max(1.0, (size.width')
+          code = code.replace('math.max(1, (size.height', 'math.max(1.0, (size.height')
+          code = code.replace('next[id] = progress.clamp(0, 1);', 'next[id] = progress.clamp(0, 1).toDouble();')
+          target.write_text(code)
           PY
       - name: Verify
         shell: bash
