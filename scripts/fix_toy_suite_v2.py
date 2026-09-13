@@ -7,14 +7,16 @@ replacements = {
     "_eventZoneProgress = (remaining / 12).clamp(0, 1);": "_eventZoneProgress = (remaining / 12).clamp(0, 1).toDouble();",
     "_turnTimerProgress = (remaining / 30000).clamp(0, 1);": "_turnTimerProgress = (remaining / 30000).clamp(0, 1).toDouble();",
     "var position = projectile.position + projectile.velocity * dt;": "var position = projectile.position + PhysicalPoint(projectile.velocity.xMm * dt, projectile.velocity.yMm * dt);",
+    "position = position + velocity * 0.035;": "position = position + PhysicalPoint(velocity.xMm * 0.035, velocity.yMm * 0.035);",
     "final dismiss = eventZoneDismiss.clamp(0, 1);": "final dismiss = eventZoneDismiss.clamp(0, 1).toDouble();",
     "final elapsed = 1 - progress.clamp(0, 1);": "final elapsed = 1 - progress.clamp(0, 1).toDouble();",
     "final length = metric.length * progress.clamp(0, 1);": "final length = metric.length * progress.clamp(0, 1).toDouble();",
     "final t = (impact.lifeSeconds / 0.8).clamp(0, 1);": "final t = (impact.lifeSeconds / 0.8).clamp(0, 1).toDouble();",
+    "const Icon(Icons.snap_to_grid)": "const Icon(Icons.grid_4x4)",
     "                projectiles: _projectiles,\n                impacts: _impacts,": "                projectiles: _projectiles,\n                impacts: _impacts,\n                sideGunsVisible: _activeToys.contains(_ToyKind.sideGuns),\n                cornerGunsVisible: _activeToys.contains(_ToyKind.cornerRicochet) || _projectiles.any((p) => p.ricochet),",
     "    required this.projectiles,\n    required this.impacts,": "    required this.projectiles,\n    required this.impacts,\n    required this.sideGunsVisible,\n    required this.cornerGunsVisible,",
     "  final List<ToyProjectile> projectiles;\n  final List<ToyImpact> impacts;": "  final List<ToyProjectile> projectiles;\n  final List<ToyImpact> impacts;\n  final bool sideGunsVisible;\n  final bool cornerGunsVisible;",
-    "board_path.write_text(text)": "text = text.replace('    _eventZoneTimer?.cancel();\\n', '')\ntext = text.replace('    _turnTimer?.cancel();\\n', '')\nboard_path.write_text(text)",
+    "board_path.write_text(text)": "text = text.replace('    _eventZoneTimer?.cancel();\\n', '')\ntext = text.replace('    _turnTimer?.cancel();\\n', '')\ntext = text.replace(\"  Widget _checkmark(bool checked) => SizedBox(\\n    width: 18,\\n    child: checked ? const Icon(Icons.check, size: 16) : null,\\n  );\\n\\n\", '')\nboard_path.write_text(text)",
 }
 
 for old, new in replacements.items():
