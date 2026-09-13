@@ -85,8 +85,9 @@ jobs:
               r"menu_marker = '''.*?alignment: Alignment\.bottomLeft,'''",
               re.DOTALL,
           )
+          menu_source = "menu_marker = '        SafeArea(\\n          child: Align(\\n            alignment: Alignment.bottomLeft,'"
           script, count = menu_assignment.subn(
-              "menu_marker = '        SafeArea(\\n          child: Align(\\n            alignment: Alignment.bottomLeft,'",
+              lambda _: menu_source,
               script,
               count=1,
           )
