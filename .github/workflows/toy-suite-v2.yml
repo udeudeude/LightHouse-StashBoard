@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/toy-suite-v2.yml
       - scripts/apply_toy_suite_v2.py
+      - scripts/fix_toy_suite_v2.py
 
 permissions:
   contents: write
@@ -23,6 +24,8 @@ jobs:
         with:
           channel: stable
           flutter-version: '3.47.0'
+      - name: Harden staged toy suite v2
+        run: python3 scripts/fix_toy_suite_v2.py
       - name: Apply toy suite v2
         run: python3 scripts/apply_toy_suite_v2.py
       - name: Verify
@@ -35,6 +38,7 @@ jobs:
       - name: Commit
         run: |
           rm -f scripts/apply_toy_suite_v2.py
+          rm -f scripts/fix_toy_suite_v2.py
           rm -f .github/workflows/toy-suite-v2.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
