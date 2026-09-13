@@ -26,6 +26,7 @@ jobs:
         run: |
           python3 <<'PY'
           from pathlib import Path
+          import re
 
           source = Path('.github/workflows/toy-suite-v1.yml').read_text()
           for old, new in {
@@ -72,23 +73,26 @@ jobs:
           if strict not in script:
               raise SystemExit('replace_once helper not found in staged script')
           script = script.replace(strict, tolerant, 1)
+
           stale_guard = """if listener_block not in text:
               raise SystemExit('board listener block not found')
           """
           if stale_guard not in script:
               raise SystemExit('obsolete board listener guard not found')
           script = script.replace(stale_guard, '', 1)
-          old_menu_marker = """menu_marker = '''        SafeArea(
-              child: Align(
-                alignment: Alignment.bottomLeft,'''
-          """
-          new_menu_marker = """menu_marker = '''        SafeArea(
-          child: Align(
-            alignment: Alignment.bottomLeft,'''
-          """
-          if old_menu_marker not in script:
+
+          menu_assignment = re.compile(
+              r"menu_marker = '''.*?alignment: Alignment\.bottomLeft,'''",
+              re.DOTALL,
+          )
+          script, count = menu_assignment.subn(
+              "menu_marker = '        SafeArea(\\n          child: Align(\\n            alignment: Alignment.bottomLeft,'",
+              script,
+              count=1,
+          )
+          if count != 1:
               raise SystemExit('staged menu marker definition not found')
-          script = script.replace(old_menu_marker, new_menu_marker, 1)
+
           exec(compile(script, 'toy-suite-v1', 'exec'), {'__name__': '__main__'})
 
           target = Path('lib/ui/board_screen_next.dart')
