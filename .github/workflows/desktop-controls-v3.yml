@@ -51,6 +51,7 @@ jobs:
           code = code.replace('math.max(1, (size.width', 'math.max(1.0, (size.width')
           code = code.replace('math.max(1, (size.height', 'math.max(1.0, (size.height')
           code = code.replace('next[id] = progress.clamp(0, 1);', 'next[id] = progress.clamp(0, 1).toDouble();')
+          code = code.replace('final count = math.min(8, math.max(4, elements.length * 2));', 'final count = math.min(8, math.max(4, elements.length * 2)).toInt();')
           target.write_text(code)
           PY
       - name: Verify
