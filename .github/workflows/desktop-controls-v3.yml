@@ -72,6 +72,12 @@ jobs:
           if strict not in script:
               raise SystemExit('replace_once helper not found in staged script')
           script = script.replace(strict, tolerant, 1)
+          stale_guard = """if listener_block not in text:
+              raise SystemExit('board listener block not found')
+          """
+          if stale_guard not in script:
+              raise SystemExit('obsolete board listener guard not found')
+          script = script.replace(stale_guard, '', 1)
           exec(compile(script, 'toy-suite-v1', 'exec'), {'__name__': '__main__'})
 
           target = Path('lib/ui/board_screen_next.dart')
