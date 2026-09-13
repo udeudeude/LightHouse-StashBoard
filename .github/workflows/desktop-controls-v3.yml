@@ -78,6 +78,17 @@ jobs:
           if stale_guard not in script:
               raise SystemExit('obsolete board listener guard not found')
           script = script.replace(stale_guard, '', 1)
+          old_menu_marker = """menu_marker = '''        SafeArea(
+              child: Align(
+                alignment: Alignment.bottomLeft,'''
+          """
+          new_menu_marker = """menu_marker = '''        SafeArea(
+          child: Align(
+            alignment: Alignment.bottomLeft,'''
+          """
+          if old_menu_marker not in script:
+              raise SystemExit('staged menu marker definition not found')
+          script = script.replace(old_menu_marker, new_menu_marker, 1)
           exec(compile(script, 'toy-suite-v1', 'exec'), {'__name__': '__main__'})
 
           target = Path('lib/ui/board_screen_next.dart')
