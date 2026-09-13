@@ -47,6 +47,31 @@ jobs:
               line[10:] if line.startswith('          ') else line
               for line in extracted.splitlines()
           )
+
+          strict = """def replace_once(old, new, label):
+              global text
+              if old not in text:
+                  raise SystemExit(f'{label} not found')
+              text = text.replace(old, new, 1)
+          """
+          tolerant = """def replace_once(old, new, label):
+              global text
+              if old in text:
+                  text = text.replace(old, new, 1)
+                  return
+              import re
+              lines = old.splitlines()
+              pattern = r'^[ \\t]*' + r'\\n[ \\t]*'.join(
+                  re.escape(line.strip()) for line in lines
+              )
+              match = re.search(pattern, text, re.MULTILINE)
+              if match is None:
+                  raise SystemExit(f'{label} not found')
+              text = text[:match.start()] + new + text[match.end():]
+          """
+          if strict not in script:
+              raise SystemExit('replace_once helper not found in staged script')
+          script = script.replace(strict, tolerant, 1)
           exec(compile(script, 'toy-suite-v1', 'exec'), {'__name__': '__main__'})
 
           target = Path('lib/ui/board_screen_next.dart')
