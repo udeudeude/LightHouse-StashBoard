@@ -26,15 +26,24 @@ import 'toy_overlay.dart';
 enum _ToyKind {
   lightLottery('Light Lottery', Icons.auto_awesome, true),
   entropy('Entropy Delete', Icons.hourglass_empty, true),
-  lightRace('Light Race', Icons.flag_outlined, false),
-  territory('Territory Zones', Icons.grid_view, false),
   ghostPaths('Ghost Paths', Icons.timeline, false),
   eventZone('Random Event Zone', Icons.adjust, false),
-  memorySequence('Memory Sequence', Icons.memory, false),
   turnTimer('Turn Timer', Icons.timer_outlined, false),
-  augmentedOverlay('Augmented Overlay', Icons.filter_center_focus, false),
-  cooperativePuzzle('Co-op Mirror Puzzle', Icons.extension_outlined, false),
-  scenarioDeck('Scenario Deck', Icons.casino_outlined, false);
+  breathing('Breathing', Icons.opacity, false),
+  nestCycle('Nest Cycle', Icons.layers, false),
+  radar('Radar', Icons.track_changes, false),
+  redSweep('Red Sweep', Icons.swap_vert, false),
+  wireDie('Wireframe d6', Icons.casino, false),
+  sideGuns('Side Guns', Icons.gps_fixed, false),
+  cornerRicochet('Corner Ricochet', Icons.radio_button_checked, false),
+  hotPotato('Hot Potato', Icons.local_fire_department, false),
+  comet('Comet', Icons.flare, false),
+  infection('Infection', Icons.device_hub, false),
+  blackoutWave('Blackout Wave', Icons.invert_colors_off, false),
+  constellationDraw('Constellation Draw', Icons.share, false),
+  rouletteField('Roulette Field', Icons.explore, false),
+  heartbeat('Heartbeat', Icons.favorite_border, false),
+  falseEndings('False Endings', Icons.replay, false);
 
   const _ToyKind(this.label, this.icon, this.defaultVisible);
 
@@ -42,7 +51,7 @@ enum _ToyKind {
   final IconData icon;
   final bool defaultVisible;
 
-  String get preferenceKey => 'lighthouse.toy.$name.visible.v1';
+  String get preferenceKey => 'lighthouse.toy.$name.visible.v2';
 }
 
 class BoardScreenNext extends StatefulWidget {
@@ -113,23 +122,34 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   final Map<_ToyKind, bool> _toyVisible = {
     for (final toy in _ToyKind.values) toy: toy.defaultVisible,
   };
+  final Set<_ToyKind> _activeToys = {};
   Timer? _entropyTimer;
-  Timer? _eventZoneTimer;
-  Timer? _turnTimer;
+  Timer? _toyTicker;
   int _effectGeneration = 0;
   int _entropyGeneration = 0;
-  Map<String, double> _raceProgress = const {};
-  int _territoryMode = 0;
-  bool _ghostTrailActive = false;
-  final Map<String, List<PhysicalPoint>> _ghostTrails = {};
+  double _toyClock = 0;
+  double _radarAngleDegrees = 0;
+  double _redSweepY = 0;
+  int _redSweepDirection = 1;
+  DateTime? _eventZoneEndsAt;
   PhysicalPoint? _eventZoneCenter;
   double? _eventZoneRadiusMm;
-  List<ToyTarget> _toyTargets = const [];
-  _ToyKind? _targetOwner;
-  int _overlayMode = 0;
+  double? _eventZoneProgress;
+  double _eventZoneDismiss = 0;
+  DateTime? _turnTimerEndsAt;
   double? _turnTimerProgress;
-  int _scenarioIndex = -1;
-  String? _scenarioLabel;
+  int _dieValue = 1;
+  double _dieRollPhase = 0;
+  DateTime? _dieRollEndsAt;
+  List<ToyProjectile> _projectiles = const [];
+  List<ToyImpact> _impacts = const [];
+  double _lastGunShotClock = -10;
+  List<PhysicalPoint> _constellation = const [];
+  double? _rouletteAngleDegrees;
+  String? _heartbeatOddId;
+  double _heartbeatStartedAt = 0;
+  final Map<String, List<PhysicalPoint>> _ghostTrails = {};
+  bool _ghostTrailActive = false;
 
   StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
   Timer? _webMotionTimer;
@@ -231,8 +251,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     _webOrientationPollTimer?.cancel();
     _desktopScrollEndTimer?.cancel();
     _entropyTimer?.cancel();
-    _eventZoneTimer?.cancel();
-    _turnTimer?.cancel();
+    _toyTicker?.cancel();
     _effectGeneration += 1;
     _entropyGeneration += 1;
     _accelerometerSubscription?.cancel();
@@ -396,83 +415,136 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     await preferences.setBool(toy.preferenceKey, next);
   }
 
+  static const Set<_ToyKind> _continuousLightToys = {
+    _ToyKind.breathing,
+    _ToyKind.nestCycle,
+    _ToyKind.radar,
+    _ToyKind.redSweep,
+    _ToyKind.blackoutWave,
+    _ToyKind.heartbeat,
+  };
+
   void _deactivateToy(_ToyKind toy) {
+    _activeToys.remove(toy);
     switch (toy) {
       case _ToyKind.lightLottery:
-      case _ToyKind.lightRace:
-      case _ToyKind.memorySequence:
+      case _ToyKind.hotPotato:
+      case _ToyKind.comet:
+      case _ToyKind.infection:
+      case _ToyKind.rouletteField:
+      case _ToyKind.falseEndings:
         _effectGeneration += 1;
         _randomizerRunning = false;
         _effectOpacities = const {};
-        _raceProgress = const {};
         _burstCenter = null;
         _burstProgress = null;
+        _rouletteAngleDegrees = null;
       case _ToyKind.entropy:
         if (_entropyEnabled) _toggleEntropy();
-      case _ToyKind.territory:
-        _territoryMode = 0;
       case _ToyKind.ghostPaths:
         _ghostTrailActive = false;
         _ghostTrails.clear();
       case _ToyKind.eventZone:
-        _eventZoneTimer?.cancel();
+        _eventZoneEndsAt = null;
         _eventZoneCenter = null;
         _eventZoneRadiusMm = null;
+        _eventZoneProgress = null;
+        _eventZoneDismiss = 0;
       case _ToyKind.turnTimer:
-        _turnTimer?.cancel();
+        _turnTimerEndsAt = null;
         _turnTimerProgress = null;
-      case _ToyKind.augmentedOverlay:
-        _overlayMode = 0;
-      case _ToyKind.cooperativePuzzle:
-      case _ToyKind.scenarioDeck:
-        if (_targetOwner == toy) {
-          _toyTargets = const [];
-          _targetOwner = null;
-          _scenarioLabel = null;
-        }
+      case _ToyKind.wireDie:
+        _dieRollEndsAt = null;
+        _dieRollPhase = 0;
+      case _ToyKind.sideGuns:
+        _projectiles = _projectiles.where((p) => p.ricochet).toList();
+      case _ToyKind.cornerRicochet:
+        _projectiles = _projectiles.where((p) => !p.ricochet).toList();
+      case _ToyKind.constellationDraw:
+        _constellation = const [];
+      case _ToyKind.breathing:
+      case _ToyKind.nestCycle:
+      case _ToyKind.radar:
+      case _ToyKind.redSweep:
+      case _ToyKind.blackoutWave:
+      case _ToyKind.heartbeat:
+        _effectOpacities = const {};
     }
+    _maybeStopToyTicker();
+    if (mounted) setState(() {});
   }
 
   void _activateToy(_ToyKind toy) {
     switch (toy) {
       case _ToyKind.lightLottery:
+        _stopContinuousLightToys();
         _runLightRandomizer();
       case _ToyKind.entropy:
         _toggleEntropy();
-      case _ToyKind.lightRace:
-        _runLightRace();
-      case _ToyKind.territory:
-        _cycleTerritoryZones();
       case _ToyKind.ghostPaths:
         _toggleGhostPaths();
       case _ToyKind.eventZone:
         _placeRandomEventZone();
-      case _ToyKind.memorySequence:
-        _runMemorySequence();
       case _ToyKind.turnTimer:
         _startTurnTimer();
-      case _ToyKind.augmentedOverlay:
-        _cycleAugmentedOverlay();
-      case _ToyKind.cooperativePuzzle:
-        _showCooperativeMirrorPuzzle();
-      case _ToyKind.scenarioDeck:
-        _nextScenario();
+      case _ToyKind.breathing:
+      case _ToyKind.nestCycle:
+      case _ToyKind.radar:
+      case _ToyKind.redSweep:
+      case _ToyKind.blackoutWave:
+      case _ToyKind.heartbeat:
+        _toggleContinuousLightToy(toy);
+      case _ToyKind.wireDie:
+        _rollWireDie();
+      case _ToyKind.sideGuns:
+        _toggleSideGuns();
+      case _ToyKind.cornerRicochet:
+        _launchCornerRicochets();
+      case _ToyKind.hotPotato:
+        _stopContinuousLightToys();
+        _runHotPotato();
+      case _ToyKind.comet:
+        _stopContinuousLightToys();
+        _runComet();
+      case _ToyKind.infection:
+        _stopContinuousLightToys();
+        _runInfection();
+      case _ToyKind.constellationDraw:
+        _drawConstellation();
+      case _ToyKind.rouletteField:
+        _stopContinuousLightToys();
+        _runRoulette();
+      case _ToyKind.falseEndings:
+        _stopContinuousLightToys();
+        _runFalseEnding();
     }
   }
 
-  bool _toyIsActive(_ToyKind toy) => switch (toy) {
-    _ToyKind.lightLottery => _randomizerRunning && _raceProgress.isEmpty,
-    _ToyKind.entropy => _entropyEnabled,
-    _ToyKind.lightRace => _raceProgress.isNotEmpty,
-    _ToyKind.territory => _territoryMode > 0,
-    _ToyKind.ghostPaths => _ghostTrailActive,
-    _ToyKind.eventZone => _eventZoneCenter != null,
-    _ToyKind.memorySequence => _randomizerRunning && _raceProgress.isEmpty,
-    _ToyKind.turnTimer => _turnTimerProgress != null,
-    _ToyKind.augmentedOverlay => _overlayMode > 0,
-    _ToyKind.cooperativePuzzle => _targetOwner == _ToyKind.cooperativePuzzle,
-    _ToyKind.scenarioDeck => _targetOwner == _ToyKind.scenarioDeck,
-  };
+  bool _toyIsActive(_ToyKind toy) {
+    if (_activeToys.contains(toy)) return true;
+    return switch (toy) {
+      _ToyKind.lightLottery ||
+      _ToyKind.hotPotato ||
+      _ToyKind.comet ||
+      _ToyKind.infection ||
+      _ToyKind.rouletteField ||
+      _ToyKind.falseEndings => _randomizerRunning,
+      _ToyKind.entropy => _entropyEnabled,
+      _ToyKind.ghostPaths => _ghostTrailActive,
+      _ToyKind.eventZone => _eventZoneCenter != null,
+      _ToyKind.turnTimer => _turnTimerProgress != null,
+      _ToyKind.wireDie => _dieRollEndsAt != null,
+      _ToyKind.sideGuns => _activeToys.contains(_ToyKind.sideGuns),
+      _ToyKind.cornerRicochet => _projectiles.any((p) => p.ricochet),
+      _ToyKind.constellationDraw => _constellation.isNotEmpty,
+      _ToyKind.breathing ||
+      _ToyKind.nestCycle ||
+      _ToyKind.radar ||
+      _ToyKind.redSweep ||
+      _ToyKind.blackoutWave ||
+      _ToyKind.heartbeat => _activeToys.contains(toy),
+    };
+  }
 
   ({double width, double height}) _physicalBoardSize() {
     final size = _webBoardSize ?? MediaQuery.sizeOf(context);
@@ -489,8 +561,31 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     );
   }
 
-  void _cycleTerritoryZones() {
-    setState(() => _territoryMode = _territoryMode % 3 + 1);
+  void _stopContinuousLightToys() {
+    _activeToys.removeAll(_continuousLightToys);
+    _effectOpacities = const {};
+  }
+
+  void _toggleContinuousLightToy(_ToyKind toy) {
+    if (_activeToys.contains(toy)) {
+      _activeToys.remove(toy);
+      setState(() => _effectOpacities = const {});
+      _maybeStopToyTicker();
+      return;
+    }
+    _effectGeneration += 1;
+    _randomizerRunning = false;
+    _stopContinuousLightToys();
+    _activeToys.add(toy);
+    if (toy == _ToyKind.heartbeat) {
+      final elements = _controller.state.elements;
+      _heartbeatOddId = elements.isEmpty
+          ? null
+          : elements[_random.nextInt(elements.length)].id;
+      _heartbeatStartedAt = _toyClock;
+    }
+    _ensureToyTicker();
+    setState(() {});
   }
 
   void _toggleGhostPaths() {
@@ -514,144 +609,510 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     final radius = math.min(maximumRadius, 12 + _random.nextDouble() * 18);
     final xSpan = math.max(0.0, board.width - radius * 2);
     final ySpan = math.max(0.0, board.height - radius * 2);
-    final center = PhysicalPoint(
-      radius + _random.nextDouble() * xSpan,
-      radius + _random.nextDouble() * ySpan,
-    );
-    _eventZoneTimer?.cancel();
     setState(() {
-      _eventZoneCenter = center;
+      _eventZoneCenter = PhysicalPoint(
+        radius + _random.nextDouble() * xSpan,
+        radius + _random.nextDouble() * ySpan,
+      );
       _eventZoneRadiusMm = radius;
+      _eventZoneProgress = 1;
+      _eventZoneDismiss = 0;
+      _eventZoneEndsAt = DateTime.now().add(const Duration(seconds: 12));
     });
-    _eventZoneTimer = Timer(const Duration(seconds: 12), () {
-      if (!mounted) return;
-      setState(() {
-        _eventZoneCenter = null;
-        _eventZoneRadiusMm = null;
-      });
-    });
-  }
-
-  void _cycleAugmentedOverlay() {
-    setState(() => _overlayMode = _overlayMode % 3 + 1);
+    _ensureToyTicker();
   }
 
   void _startTurnTimer() {
-    _turnTimer?.cancel();
-    final endsAt = DateTime.now().add(const Duration(seconds: 30));
-    setState(() => _turnTimerProgress = 1);
-    _turnTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      final remaining = endsAt.difference(DateTime.now()).inMilliseconds;
-      if (remaining <= 0) {
-        timer.cancel();
-        HapticFeedback.mediumImpact();
-        setState(() => _turnTimerProgress = 0);
-        Future<void>.delayed(const Duration(milliseconds: 650), () {
-          if (mounted && _turnTimerProgress == 0) {
-            setState(() => _turnTimerProgress = null);
-          }
-        });
-        return;
-      }
-      setState(() => _turnTimerProgress = remaining / 30000);
+    setState(() {
+      _turnTimerEndsAt = DateTime.now().add(const Duration(seconds: 30));
+      _turnTimerProgress = 1;
+    });
+    _ensureToyTicker();
+  }
+
+  void _rollWireDie() {
+    _activeToys.add(_ToyKind.wireDie);
+    _dieRollEndsAt = DateTime.now().add(const Duration(milliseconds: 900));
+    _dieValue = 1 + _random.nextInt(6);
+    _dieRollPhase = 0;
+    _ensureToyTicker();
+    setState(() {});
+  }
+
+  void _toggleSideGuns() {
+    if (_activeToys.remove(_ToyKind.sideGuns)) {
+      _maybeStopToyTicker();
+      setState(() {});
+      return;
+    }
+    _activeToys.add(_ToyKind.sideGuns);
+    _spawnSideVolley();
+    _lastGunShotClock = _toyClock;
+    _ensureToyTicker();
+    setState(() {});
+  }
+
+  void _spawnSideVolley() {
+    final board = _physicalBoardSize();
+    const speed = 85.0;
+    final centerX = board.width / 2;
+    final centerY = board.height / 2;
+    _projectiles = [
+      ..._projectiles,
+      ToyProjectile(
+        position: PhysicalPoint(0, centerY),
+        velocity: const PhysicalPoint(speed, 0),
+        radiusMm: 0.8,
+      ),
+      ToyProjectile(
+        position: PhysicalPoint(board.width, centerY),
+        velocity: const PhysicalPoint(-speed, 0),
+        radiusMm: 0.8,
+      ),
+      ToyProjectile(
+        position: PhysicalPoint(centerX, 0),
+        velocity: const PhysicalPoint(0, speed),
+        radiusMm: 0.8,
+      ),
+      ToyProjectile(
+        position: PhysicalPoint(centerX, board.height),
+        velocity: const PhysicalPoint(0, -speed),
+        radiusMm: 0.8,
+      ),
+    ];
+  }
+
+  void _launchCornerRicochets() {
+    final board = _physicalBoardSize();
+    const speed = 42.0;
+    _projectiles = [
+      ..._projectiles,
+      ToyProjectile(
+        position: const PhysicalPoint(1, 1),
+        velocity: const PhysicalPoint(speed, speed * 0.73),
+        radiusMm: 2.1,
+        ricochet: true,
+      ),
+      ToyProjectile(
+        position: PhysicalPoint(board.width - 1, 1),
+        velocity: const PhysicalPoint(-speed * 0.81, speed),
+        radiusMm: 2.1,
+        ricochet: true,
+      ),
+      ToyProjectile(
+        position: PhysicalPoint(1, board.height - 1),
+        velocity: const PhysicalPoint(speed, -speed * 0.86),
+        radiusMm: 2.1,
+        ricochet: true,
+      ),
+      ToyProjectile(
+        position: PhysicalPoint(board.width - 1, board.height - 1),
+        velocity: const PhysicalPoint(-speed, -speed * 0.69),
+        radiusMm: 2.1,
+        ricochet: true,
+      ),
+    ];
+    _ensureToyTicker();
+    setState(() {});
+  }
+
+  void _ensureToyTicker() {
+    _toyTicker ??= Timer.periodic(const Duration(milliseconds: 33), (_) {
+      _tickToys(0.033);
     });
   }
 
-  Future<void> _runLightRace() async {
-    if (_randomizerRunning || _controller.state.elements.isEmpty) return;
-    final generation = ++_effectGeneration;
-    final ids = _controller.state.elements
-        .map((element) => element.id)
-        .toList();
-    setState(() {
-      _randomizerRunning = true;
-      _raceProgress = {for (final id in ids) id: 0};
-      _effectOpacities = const {};
-      _burstCenter = null;
-      _burstProgress = null;
-    });
+  bool get _needsToyTicker =>
+      _activeToys.any(_continuousLightToys.contains) ||
+      _activeToys.contains(_ToyKind.sideGuns) ||
+      _eventZoneCenter != null ||
+      _turnTimerProgress != null ||
+      _dieRollEndsAt != null ||
+      _projectiles.isNotEmpty ||
+      _impacts.isNotEmpty;
 
-    String? winnerId;
-    while (winnerId == null && mounted && generation == _effectGeneration) {
-      await Future<void>.delayed(const Duration(milliseconds: 110));
-      if (!mounted || generation != _effectGeneration) return;
-      final liveIds = _controller.state.elements
-          .map((element) => element.id)
-          .toList();
-      if (liveIds.isEmpty) break;
-      final id = liveIds[_random.nextInt(liveIds.length)];
-      final next = Map<String, double>.from(_raceProgress);
-      final progress = (next[id] ?? 0) + 0.045 + _random.nextDouble() * 0.085;
-      next[id] = progress.clamp(0, 1).toDouble();
-      if (progress >= 1) winnerId = id;
-      setState(() => _raceProgress = next);
+  void _maybeStopToyTicker() {
+    if (_needsToyTicker) return;
+    _toyTicker?.cancel();
+    _toyTicker = null;
+  }
+
+  void _tickToys(double dt) {
+    if (!mounted) return;
+    _toyClock += dt;
+    final now = DateTime.now();
+
+    if (_activeToys.contains(_ToyKind.sideGuns) &&
+        _toyClock - _lastGunShotClock >= 0.85) {
+      _spawnSideVolley();
+      _lastGunShotClock = _toyClock;
     }
 
-    final winner = winnerId == null
-        ? null
-        : _controller.state.elementById(winnerId);
-    if (winner != null && mounted && generation == _effectGeneration) {
+    final eventEnds = _eventZoneEndsAt;
+    if (eventEnds != null) {
+      final remaining = eventEnds.difference(now).inMilliseconds / 1000;
+      if (remaining <= 0) {
+        _eventZoneProgress = 0;
+        _eventZoneDismiss += dt / 0.65;
+        if (_eventZoneDismiss >= 1) {
+          _eventZoneEndsAt = null;
+          _eventZoneCenter = null;
+          _eventZoneRadiusMm = null;
+          _eventZoneProgress = null;
+          _eventZoneDismiss = 0;
+        }
+      } else {
+        _eventZoneProgress = (remaining / 12).clamp(0, 1).toDouble();
+      }
+    }
+
+    final turnEnds = _turnTimerEndsAt;
+    if (turnEnds != null) {
+      final remaining = turnEnds.difference(now).inMilliseconds;
+      if (remaining <= 0) {
+        _turnTimerEndsAt = null;
+        _turnTimerProgress = null;
+        HapticFeedback.mediumImpact();
+      } else {
+        _turnTimerProgress = (remaining / 30000).clamp(0, 1).toDouble();
+      }
+    }
+
+    final dieEnds = _dieRollEndsAt;
+    if (dieEnds != null) {
+      if (now.isAfter(dieEnds)) {
+        _dieRollEndsAt = null;
+        _dieRollPhase = 0;
+      } else {
+        _dieRollPhase += dt * 9;
+        if ((_toyClock * 16).floor().isEven) {
+          _dieValue = 1 + _random.nextInt(6);
+        }
+      }
+    }
+
+    _tickProjectiles(dt);
+    _updateContinuousLighting();
+    setState(() {});
+    _maybeStopToyTicker();
+  }
+
+  void _updateContinuousLighting() {
+    final elements = _controller.state.elements;
+    if (elements.isEmpty) {
+      _effectOpacities = const {};
+      return;
+    }
+
+    if (_activeToys.contains(_ToyKind.radar)) {
+      _radarAngleDegrees = normalizeDegrees(_radarAngleDegrees + 1.8);
+      final board = _physicalBoardSize();
+      final center = PhysicalPoint(board.width / 2, board.height / 2);
+      _effectOpacities = {
+        for (final e in elements)
+          e.id: _radarOpacity(e.position, center, _radarAngleDegrees),
+      };
+      return;
+    }
+
+    if (_activeToys.contains(_ToyKind.redSweep)) {
+      final phase = (_toyClock * 0.30) % 2;
+      _redSweepDirection = phase <= 1 ? 1 : -1;
+      _redSweepY = phase <= 1 ? phase : 2 - phase;
+      final board = _physicalBoardSize();
+      final lineY = board.height * _redSweepY;
+      _effectOpacities = {
+        for (final e in elements)
+          e.id: _sweepOpacity(e.position.yMm, lineY, _redSweepDirection),
+      };
+      return;
+    }
+
+    if (_activeToys.contains(_ToyKind.breathing)) {
+      _effectOpacities = {
+        for (final e in elements) e.id: _breathOpacity(e),
+      };
+      return;
+    }
+
+    if (_activeToys.contains(_ToyKind.nestCycle)) {
+      final phase = ((_toyClock / 0.58).floor()) % 3;
+      final wanted = [PyramidSize.large, PyramidSize.medium, PyramidSize.small][phase];
+      final nestedIds = <String>{};
+      for (var i = 0; i < elements.length; i++) {
+        for (var j = i + 1; j < elements.length; j++) {
+          if (elements[i].position.distanceTo(elements[j].position) <= 2.2) {
+            nestedIds.add(elements[i].id);
+            nestedIds.add(elements[j].id);
+          }
+        }
+      }
+      _effectOpacities = {
+        for (final e in elements)
+          e.id: nestedIds.contains(e.id) ? (e.size == wanted ? 1.0 : 0.025) : 1.0,
+      };
+      return;
+    }
+
+    if (_activeToys.contains(_ToyKind.blackoutWave)) {
+      final phase = (_toyClock * 0.18) % 2;
+      final down = phase <= 1;
+      final front = down ? phase : 2 - phase;
+      final board = _physicalBoardSize();
+      _effectOpacities = {
+        for (final e in elements)
+          e.id: down
+              ? (e.position.yMm / board.height <= front ? 0.025 : 1.0)
+              : (e.position.yMm / board.height <= front ? 0.025 : 1.0),
+      };
+      return;
+    }
+
+    if (_activeToys.contains(_ToyKind.heartbeat)) {
+      final elapsed = _toyClock - _heartbeatStartedAt;
+      _effectOpacities = {
+        for (final e in elements)
+          e.id: _heartbeatOpacity(e.id == _heartbeatOddId, elapsed),
+      };
+      return;
+    }
+
+    if (!_randomizerRunning) _effectOpacities = const {};
+  }
+
+  double _breathOpacity(LightElement element) {
+    final period = switch (element.size) {
+      PyramidSize.small => 2.5,
+      PyramidSize.medium => 3.6,
+      PyramidSize.large => 5.0,
+    };
+    final phase = (element.id.hashCode.abs() % 1000) / 1000 * math.pi * 2;
+    final wave = 0.5 + 0.5 * math.sin(_toyClock * math.pi * 2 / period + phase);
+    return 0.035 + 0.965 * wave;
+  }
+
+  double _radarOpacity(PhysicalPoint point, PhysicalPoint center, double angle) {
+    final dx = point.xMm - center.xMm;
+    final dy = point.yMm - center.yMm;
+    final elementAngle = normalizeDegrees(math.atan2(dy, dx) * 180 / math.pi);
+    final behind = normalizeDegrees(angle - elementAngle);
+    if (behind <= 10) return 1;
+    if (behind <= 30) return 1 - (behind - 10) / 20 * 0.965;
+    return 0.035;
+  }
+
+  double _sweepOpacity(double y, double lineY, int direction) {
+    final behind = direction > 0 ? lineY - y : y - lineY;
+    if (behind >= 0 && behind <= 5) return 1;
+    if (behind > 5 && behind <= 25) return 1 - (behind - 5) / 20 * 0.965;
+    return 0.035;
+  }
+
+  double _heartbeatOpacity(bool odd, double elapsed) {
+    final drift = odd ? math.min(math.pi, elapsed * 0.23) : 0.0;
+    final pulse = 0.5 + 0.5 * math.sin(_toyClock * math.pi * 1.7 + drift);
+    return 0.04 + pulse * 0.96;
+  }
+
+  void _tickProjectiles(double dt) {
+    if (_projectiles.isEmpty && _impacts.isEmpty) return;
+    final board = _physicalBoardSize();
+    final next = <ToyProjectile>[];
+    final hitIds = <String>{};
+    final impacts = <ToyImpact>[
+      for (final impact in _impacts)
+        if (impact.lifeSeconds - dt > 0)
+          impact.copyWith(lifeSeconds: impact.lifeSeconds - dt),
+    ];
+
+    for (var projectile in _projectiles) {
+      var position = projectile.position + PhysicalPoint(projectile.velocity.xMm * dt, projectile.velocity.yMm * dt);
+      var velocity = projectile.velocity;
+      var edgeHits = projectile.edgeHits;
+      var escaping = projectile.escaping;
+
+      if (projectile.ricochet) {
+        if (!escaping) {
+          var bounced = false;
+          if (position.xMm <= 0 || position.xMm >= board.width) {
+            edgeHits += 1;
+            if (edgeHits >= 4) {
+              escaping = true;
+            } else {
+              velocity = PhysicalPoint(-velocity.xMm, velocity.yMm);
+              position = PhysicalPoint(
+                position.xMm.clamp(0.2, board.width - 0.2),
+                position.yMm,
+              );
+              bounced = true;
+            }
+          }
+          if (!escaping && (position.yMm <= 0 || position.yMm >= board.height)) {
+            edgeHits += 1;
+            if (edgeHits >= 4) {
+              escaping = true;
+            } else {
+              velocity = PhysicalPoint(velocity.xMm, -velocity.yMm);
+              position = PhysicalPoint(
+                position.xMm,
+                position.yMm.clamp(0.2, board.height - 0.2),
+              );
+              bounced = true;
+            }
+          }
+          if (!bounced && !escaping) {
+            final hit = _controller.hitTest(position, haloMm: projectile.radiusMm);
+            if (hit != null) {
+              final normal = position - hit.position;
+              final length = math.max(0.001, normal.distanceTo(PhysicalPoint.zero));
+              final nx = normal.xMm / length;
+              final ny = normal.yMm / length;
+              final dot = velocity.xMm * nx + velocity.yMm * ny;
+              velocity = PhysicalPoint(
+                velocity.xMm - 2 * dot * nx,
+                velocity.yMm - 2 * dot * ny,
+              );
+              position = position + PhysicalPoint(velocity.xMm * 0.035, velocity.yMm * 0.035);
+            }
+          }
+        }
+        final outside = position.xMm < -6 ||
+            position.xMm > board.width + 6 ||
+            position.yMm < -6 ||
+            position.yMm > board.height + 6;
+        if (!outside) {
+          next.add(projectile.copyWith(
+            position: position,
+            velocity: velocity,
+            edgeHits: edgeHits,
+            escaping: escaping,
+          ));
+        }
+        continue;
+      }
+
+      LightElement? hit;
+      for (final element in _controller.state.elements) {
+        if (_containsPoint(element, position)) {
+          hit = element;
+          break;
+        }
+      }
+      if (hit != null) {
+        hitIds.add(hit.id);
+        impacts.add(ToyImpact(position: position, lifeSeconds: 0.8));
+        continue;
+      }
+      final outside = position.xMm < -2 ||
+          position.xMm > board.width + 2 ||
+          position.yMm < -2 ||
+          position.yMm > board.height + 2;
+      if (!outside) next.add(projectile.copyWith(position: position));
+    }
+
+    _projectiles = next;
+    _impacts = impacts;
+    for (final id in hitIds) {
+      final element = _controller.state.elementById(id);
+      if (element != null) _controller.deleteElement(element);
+    }
+  }
+
+  Future<void> _runHotPotato() async {
+    if (_randomizerRunning || _controller.state.elements.isEmpty) return;
+    final generation = ++_effectGeneration;
+    _randomizerRunning = true;
+    var delay = 420;
+    String? chosen;
+    for (var i = 0; i < 28; i++) {
+      if (!mounted || generation != _effectGeneration) return;
+      final elements = _controller.state.elements;
+      if (elements.isEmpty) break;
+      chosen = elements[_random.nextInt(elements.length)].id;
       setState(() {
         _effectOpacities = {
-          for (final element in _controller.state.elements)
-            element.id: element.id == winner.id ? 1.0 : 0.12,
+          for (final e in elements) e.id: e.id == chosen ? 1.0 : 0.035,
         };
-        _burstCenter = winner.position;
-        _burstProgress = 0;
       });
-      for (var frame = 0; frame <= 24; frame += 1) {
-        if (!mounted || generation != _effectGeneration) return;
-        setState(() => _burstProgress = frame / 24);
-        await Future<void>.delayed(const Duration(milliseconds: 24));
+      await Future<void>.delayed(Duration(milliseconds: delay));
+      delay = math.max(65, (delay * 0.88).round());
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 1100));
+    if (!mounted || generation != _effectGeneration) return;
+    setState(() {
+      _randomizerRunning = false;
+      _effectOpacities = const {};
+    });
+  }
+
+  Future<void> _runComet() async {
+    if (_randomizerRunning || _controller.state.elements.isEmpty) return;
+    final generation = ++_effectGeneration;
+    _randomizerRunning = true;
+    final remaining = [..._controller.state.elements];
+    final ordered = <LightElement>[];
+    ordered.add(remaining.removeAt(_random.nextInt(remaining.length)));
+    while (remaining.isNotEmpty) {
+      final last = ordered.last;
+      remaining.sort((a, b) => last.position
+          .distanceTo(a.position)
+          .compareTo(last.position.distanceTo(b.position)));
+      ordered.add(remaining.removeAt(0));
+    }
+    for (var i = 0; i < ordered.length + 4; i++) {
+      if (!mounted || generation != _effectGeneration) return;
+      final opacities = <String, double>{};
+      for (var j = 0; j < ordered.length; j++) {
+        final behind = i - j;
+        opacities[ordered[j].id] = switch (behind) {
+          0 => 1.0,
+          1 => 0.62,
+          2 => 0.30,
+          3 => 0.12,
+          _ => 0.025,
+        };
       }
-      await Future<void>.delayed(const Duration(milliseconds: 850));
+      setState(() => _effectOpacities = opacities);
+      await Future<void>.delayed(const Duration(milliseconds: 145));
     }
     if (!mounted || generation != _effectGeneration) return;
     setState(() {
       _randomizerRunning = false;
-      _raceProgress = const {};
       _effectOpacities = const {};
-      _burstCenter = null;
-      _burstProgress = null;
     });
   }
 
-  Future<void> _runMemorySequence() async {
+  Future<void> _runInfection() async {
     if (_randomizerRunning || _controller.state.elements.isEmpty) return;
     final generation = ++_effectGeneration;
-    final elements = _controller.state.elements;
-    final count = math.min(8, math.max(4, elements.length * 2)).toInt();
-    final sequence = <String>[];
-    String? previous;
-    for (var i = 0; i < count; i += 1) {
-      final choices = elements.length == 1 || previous == null
-          ? elements
-          : elements.where((element) => element.id != previous).toList();
-      final chosen = choices[_random.nextInt(choices.length)].id;
-      sequence.add(chosen);
-      previous = chosen;
-    }
-    setState(() => _randomizerRunning = true);
-    for (final id in sequence) {
-      if (!mounted || generation != _effectGeneration) return;
-      final current = _controller.state.elements;
+    _randomizerRunning = true;
+    final infected = <String>{};
+    final first = _controller.state.elements[_random.nextInt(_controller.state.elements.length)];
+    infected.add(first.id);
+    while (mounted && generation == _effectGeneration) {
+      final elements = _controller.state.elements;
+      if (infected.length >= elements.length) break;
+      LightElement? best;
+      var bestDistance = double.infinity;
+      for (final source in elements.where((e) => infected.contains(e.id))) {
+        for (final candidate in elements.where((e) => !infected.contains(e.id))) {
+          final d = source.position.distanceTo(candidate.position);
+          if (d < bestDistance) {
+            bestDistance = d;
+            best = candidate;
+          }
+        }
+      }
+      if (best == null) break;
+      infected.add(best.id);
       setState(() {
         _effectOpacities = {
-          for (final element in current)
-            element.id: element.id == id ? 1.0 : 0.08,
+          for (final e in elements) e.id: infected.contains(e.id) ? 1.0 : 0.035,
         };
       });
       await Future<void>.delayed(const Duration(milliseconds: 430));
-      if (!mounted || generation != _effectGeneration) return;
-      setState(() {
-        _effectOpacities = {for (final element in current) element.id: 0.18};
-      });
-      await Future<void>.delayed(const Duration(milliseconds: 190));
     }
+    await Future<void>.delayed(const Duration(milliseconds: 750));
     if (!mounted || generation != _effectGeneration) return;
     setState(() {
       _randomizerRunning = false;
@@ -659,148 +1120,96 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     });
   }
 
-  void _showCooperativeMirrorPuzzle() {
-    final elements = _controller.state.elements;
-    if (elements.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Create a few footprints first.')),
-      );
-      return;
-    }
-    final board = _physicalBoardSize();
+  void _drawConstellation() {
+    final elements = [..._controller.state.elements]..shuffle(_random);
+    if (elements.length < 2) return;
+    final count = math.min(elements.length, 2 + _random.nextInt(4));
     setState(() {
-      _toyTargets = [
-        for (final element in elements)
-          ToyTarget(
-            position: PhysicalPoint(
-              board.width - element.position.xMm,
-              element.position.yMm,
-            ),
-            size: element.size,
-            pose: element.pose,
-            headingDegrees: normalizeDegrees(180 - element.headingDegrees),
-          ),
-      ];
-      _targetOwner = _ToyKind.cooperativePuzzle;
-      _scenarioLabel = 'CO-OP MIRROR';
+      _constellation = [for (final e in elements.take(count)) e.position];
+    });
+    Future<void>.delayed(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _constellation = const []);
     });
   }
 
-  void _nextScenario() {
+  Future<void> _runRoulette() async {
+    if (_randomizerRunning || _controller.state.elements.isEmpty) return;
+    final generation = ++_effectGeneration;
+    _randomizerRunning = true;
     final board = _physicalBoardSize();
-    final width = board.width;
-    final height = board.height;
-    final margin = math.max(
-      8.0,
-      math.min(18.0, math.min(width, height) * 0.12),
-    );
-    final center = PhysicalPoint(width / 2, height / 2);
-    _scenarioIndex = (_scenarioIndex + 1) % 5;
-    late final List<ToyTarget> targets;
-    late final String label;
-
-    switch (_scenarioIndex) {
-      case 0:
-        label = 'SCENARIO · FOUR CORNERS';
-        targets = [
-          ToyTarget(
-            position: PhysicalPoint(margin, margin),
-            size: PyramidSize.small,
-            pose: PyramidPose.upright,
-          ),
-          ToyTarget(
-            position: PhysicalPoint(width - margin, margin),
-            size: PyramidSize.small,
-            pose: PyramidPose.upright,
-          ),
-          ToyTarget(
-            position: PhysicalPoint(margin, height - margin),
-            size: PyramidSize.small,
-            pose: PyramidPose.upright,
-          ),
-          ToyTarget(
-            position: PhysicalPoint(width - margin, height - margin),
-            size: PyramidSize.small,
-            pose: PyramidPose.upright,
-          ),
-        ];
-      case 1:
-        label = 'SCENARIO · DIAGONAL';
-        targets = [
-          ToyTarget(
-            position: PhysicalPoint(width * 0.28, height * 0.28),
-            size: PyramidSize.small,
-            pose: PyramidPose.flat,
-            headingDegrees: 45,
-          ),
-          ToyTarget(
-            position: center,
-            size: PyramidSize.medium,
-            pose: PyramidPose.flat,
-            headingDegrees: 45,
-          ),
-          ToyTarget(
-            position: PhysicalPoint(width * 0.72, height * 0.72),
-            size: PyramidSize.large,
-            pose: PyramidPose.flat,
-            headingDegrees: 45,
-          ),
-        ];
-      case 2:
-        label = 'SCENARIO · ORBIT';
-        final radius = math.min(width, height) * 0.25;
-        targets = [
-          for (var i = 0; i < 6; i += 1)
-            ToyTarget(
-              position: PhysicalPoint(
-                center.xMm + math.cos(i * math.pi / 3) * radius,
-                center.yMm + math.sin(i * math.pi / 3) * radius,
-              ),
-              size: PyramidSize.small,
-              pose: PyramidPose.upright,
-              headingDegrees: i * 60,
-            ),
-        ];
-      case 3:
-        label = 'SCENARIO · NEST';
-        targets = [
-          ToyTarget(
-            position: center,
-            size: PyramidSize.large,
-            pose: PyramidPose.upright,
-          ),
-          ToyTarget(
-            position: center,
-            size: PyramidSize.medium,
-            pose: PyramidPose.upright,
-          ),
-          ToyTarget(
-            position: center,
-            size: PyramidSize.small,
-            pose: PyramidPose.upright,
-          ),
-        ];
-      default:
-        label = 'SCENARIO · PINWHEEL';
-        final radius = math.min(width, height) * 0.18;
-        targets = [
-          for (var i = 0; i < 4; i += 1)
-            ToyTarget(
-              position: PhysicalPoint(
-                center.xMm + math.cos(i * math.pi / 2) * radius,
-                center.yMm + math.sin(i * math.pi / 2) * radius,
-              ),
-              size: PyramidSize.medium,
-              pose: PyramidPose.flat,
-              headingDegrees: i * 90 + 45,
-            ),
-        ];
+    final center = PhysicalPoint(board.width / 2, board.height / 2);
+    final target = _controller.state.elements[_random.nextInt(_controller.state.elements.length)];
+    final targetAngle = normalizeDegrees(math.atan2(
+          target.position.yMm - center.yMm,
+          target.position.xMm - center.xMm,
+        ) *
+        180 /
+        math.pi);
+    const frames = 72;
+    for (var i = 0; i <= frames; i++) {
+      if (!mounted || generation != _effectGeneration) return;
+      final t = i / frames;
+      final eased = 1 - math.pow(1 - t, 3).toDouble();
+      setState(() => _rouletteAngleDegrees = normalizeDegrees((1080 + targetAngle) * eased));
+      await Future<void>.delayed(const Duration(milliseconds: 28));
     }
-
     setState(() {
-      _toyTargets = targets;
-      _targetOwner = _ToyKind.scenarioDeck;
-      _scenarioLabel = label;
+      _effectOpacities = {
+        for (final e in _controller.state.elements)
+          e.id: e.id == target.id ? 1.0 : 0.035,
+      };
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    if (!mounted || generation != _effectGeneration) return;
+    setState(() {
+      _randomizerRunning = false;
+      _rouletteAngleDegrees = null;
+      _effectOpacities = const {};
+    });
+  }
+
+  Future<void> _runFalseEnding() async {
+    if (_randomizerRunning || _controller.state.elements.isEmpty) return;
+    final generation = ++_effectGeneration;
+    _randomizerRunning = true;
+    final elements = _controller.state.elements;
+    for (var i = 0; i < 18; i++) {
+      if (!mounted || generation != _effectGeneration) return;
+      final id = elements[_random.nextInt(elements.length)].id;
+      setState(() => _effectOpacities = {
+            for (final e in _controller.state.elements)
+              e.id: e.id == id ? 1.0 : 0.025,
+          });
+      await Future<void>.delayed(Duration(milliseconds: 80 + i * 13));
+    }
+    if (!mounted || generation != _effectGeneration) return;
+    final first = elements[_random.nextInt(elements.length)];
+    setState(() => _effectOpacities = {
+          for (final e in elements) e.id: e.id == first.id ? 1 : 0.02,
+        });
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    if (!mounted || generation != _effectGeneration) return;
+    setState(() => _effectOpacities = {for (final e in elements) e.id: 0.0});
+    await Future<void>.delayed(const Duration(milliseconds: 360));
+    if (!mounted || generation != _effectGeneration) return;
+    final alternatives = elements.where((e) => e.id != first.id).toList();
+    final finalPick = alternatives.isEmpty
+        ? first
+        : alternatives[_random.nextInt(alternatives.length)];
+    setState(() {
+      _effectOpacities = {
+        for (final e in elements) e.id: e.id == finalPick.id ? 1.0 : 0.025,
+      };
+      _burstCenter = finalPick.position;
+      _burstProgress = 0.35;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 1400));
+    if (!mounted || generation != _effectGeneration) return;
+    setState(() {
+      _randomizerRunning = false;
+      _effectOpacities = const {};
+      _burstCenter = null;
+      _burstProgress = null;
     });
   }
 
@@ -977,9 +1386,9 @@ class _BoardScreenNextState extends State<BoardScreenNext>
           element.id,
           () => <PhysicalPoint>[],
         );
-        if (trail.isEmpty || trail.last.distanceTo(element.position) >= 1.2) {
+        if (trail.isEmpty || trail.last.distanceTo(element.position) >= 2.4) {
           trail.add(element.position);
-          if (trail.length > 42) trail.removeAt(0);
+          if (trail.length > 84) trail.removeAt(0);
         }
       }
     }
@@ -1708,197 +2117,146 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     });
   }
 
-  Widget _checkmark(bool checked) => SizedBox(
-    width: 18,
-    child: checked ? const Icon(Icons.check, size: 16) : null,
+  Widget _menu() => IconButton(
+    tooltip: 'Menu',
+    onPressed: _showMainMenu,
+    icon: SizedBox(
+      width: 36,
+      height: 36,
+      child: CustomPaint(
+        painter: _MenuCirclePainter(snapDegrees: _rotationSnapDegrees),
+      ),
+    ),
   );
 
-  Widget _menu() {
+  Future<void> _showMainMenu() async {
+    await _ensureMotionPermission();
+    if (!mounted) return;
     const angles = <double>[0, 45, 90, 135, 180, 225, 270, 315];
     const snapOptions = <double>[15, 30, 45, 90];
-
-    final fileItems = <Widget>[
-      MenuItemButton(onPressed: _newBoard, child: const Text('New')),
-      MenuItemButton(onPressed: _manageSavedBoards, child: const Text('Open…')),
-      MenuItemButton(onPressed: () => _saveBoard(), child: const Text('Save')),
-      MenuItemButton(
-        onPressed: () => _saveBoard(asCopy: true),
-        child: const Text('Save a Copy…'),
-      ),
-      MenuItemButton(onPressed: _renameBoard, child: const Text('Rename…')),
-      MenuItemButton(
-        onPressed: _importBoard,
-        child: const Text('Import Board JSON…'),
-      ),
-      MenuItemButton(
-        onPressed: _exportBoard,
-        child: const Text('Copy Board JSON'),
-      ),
-    ];
-
-    final underlayItems = <Widget>[
-      MenuItemButton(
-        closeOnActivate: false,
-        leadingIcon: _checkmark(_gridSnapEnabled),
-        onPressed: _toggleGridSnap,
-        child: const Text('Snap pieces to underlay'),
-      ),
-      for (final underlay in BoardUnderlay.values)
-        MenuItemButton(
-          closeOnActivate: false,
-          leadingIcon: _checkmark(_controller.state.underlay == underlay),
-          onPressed: () => _selectUnderlay(underlay),
-          child: Text(underlay.menuLabel),
-        ),
-    ];
-
-    final toyItems = <Widget>[
-      for (final toy in _ToyKind.values)
-        MenuItemButton(
-          closeOnActivate: false,
-          leadingIcon: _checkmark(_toyVisible[toy] ?? toy.defaultVisible),
-          onPressed: () => _toggleToyVisibility(toy),
-          child: Text(toy.label),
-        ),
-    ];
-    final rotationItems = <Widget>[
-      MenuItemButton(
-        onPressed: () => _rotateSelected(-15),
-        child: const Text('Rotate Left 15°'),
-      ),
-      MenuItemButton(
-        onPressed: () => _rotateSelected(15),
-        child: const Text('Rotate Right 15°'),
-      ),
-      SubmenuButton(
-        submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
-        menuChildren: [
-          for (final angle in angles)
-            MenuItemButton(
-              onPressed: () => _setHeading(angle),
-              child: Text('${angle.toInt()}°'),
-            ),
-        ],
-        child: const Text('Set Orientation'),
-      ),
-      SubmenuButton(
-        submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
-        menuChildren: [
-          MenuItemButton(
-            closeOnActivate: false,
-            leadingIcon: _checkmark(_rotationSnapDegrees == null),
-            onPressed: () => _setRotationSnap(null),
-            child: const Text('Off'),
-          ),
-          for (final degrees in snapOptions)
-            MenuItemButton(
-              closeOnActivate: false,
-              leadingIcon: _checkmark(_rotationSnapDegrees == degrees),
-              onPressed: () => _setRotationSnap(degrees),
-              child: Text('${degrees.toInt()}° increments'),
-            ),
-        ],
-        child: Text(
-          _rotationSnapDegrees == null
-              ? 'Always Snap Rotation · Off'
-              : 'Always Snap Rotation · ${_rotationSnapDegrees!.toInt()}°',
-        ),
-      ),
-    ];
-
-    return MenuAnchor(
-      menuChildren: [
-        SubmenuButton(
-          submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
-          menuChildren: [
-            SubmenuButton(
-              submenuIcon: const WidgetStatePropertyAll<Widget?>(
-                SizedBox.shrink(),
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF171717),
+      builder: (sheetContext) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.78,
+        minChildSize: 0.34,
+        maxChildSize: 0.94,
+        builder: (context, scrollController) => StatefulBuilder(
+          builder: (context, setSheetState) => ListView(
+            controller: scrollController,
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 20),
+            children: [
+              ExpansionTile(
+                leading: const Icon(Icons.dashboard_outlined),
+                title: const Text('Board'),
+                children: [
+                  ListTile(leading: const Icon(Icons.note_add_outlined), title: const Text('New'), onTap: _newBoard),
+                  ListTile(leading: const Icon(Icons.folder_open), title: const Text('Open…'), onTap: _manageSavedBoards),
+                  ListTile(leading: const Icon(Icons.save_outlined), title: const Text('Save'), onTap: () => _saveBoard()),
+                  ListTile(leading: const Icon(Icons.copy), title: const Text('Save a Copy…'), onTap: () => _saveBoard(asCopy: true)),
+                  ListTile(leading: const Icon(Icons.drive_file_rename_outline), title: const Text('Rename…'), onTap: _renameBoard),
+                  ListTile(leading: const Icon(Icons.input), title: const Text('Import Board JSON…'), onTap: _importBoard),
+                  ListTile(leading: const Icon(Icons.content_copy), title: const Text('Copy Board JSON'), onTap: _exportBoard),
+                  ExpansionTile(
+                    leading: const Icon(Icons.grid_on),
+                    title: const Text('Underlays'),
+                    children: [
+                      SwitchListTile(
+                        secondary: const Icon(Icons.grid_4x4),
+                        title: const Text('Snap pieces to underlay'),
+                        value: _gridSnapEnabled,
+                        onChanged: (_) async {
+                          await _toggleGridSnap();
+                          setSheetState(() {});
+                        },
+                      ),
+                      for (final underlay in BoardUnderlay.values)
+                        ListTile(
+                          leading: Icon(_controller.state.underlay == underlay ? Icons.radio_button_checked : Icons.radio_button_unchecked),
+                          title: Text(underlay.menuLabel),
+                          onTap: () {
+                            _selectUnderlay(underlay);
+                            setSheetState(() {});
+                          },
+                        ),
+                    ],
+                  ),
+                ],
               ),
-              menuChildren: fileItems,
-              child: const Text('File'),
-            ),
-            SubmenuButton(
-              submenuIcon: const WidgetStatePropertyAll<Widget?>(
-                SizedBox.shrink(),
+              ExpansionTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Edit'),
+                children: [
+                  ListTile(leading: const Icon(Icons.undo), title: const Text('Undo'), enabled: _controller.canUndo, onTap: _controller.canUndo ? _controller.undo : null),
+                  ListTile(leading: const Icon(Icons.redo), title: const Text('Redo'), enabled: _controller.canRedo, onTap: _controller.canRedo ? _controller.redo : null),
+                  ListTile(leading: const Icon(Icons.rotate_left), title: const Text('Rotate Left 15°'), onTap: () => _rotateSelected(-15)),
+                  ListTile(leading: const Icon(Icons.rotate_right), title: const Text('Rotate Right 15°'), onTap: () => _rotateSelected(15)),
+                  ExpansionTile(
+                    leading: const Icon(Icons.explore_outlined),
+                    title: const Text('Set Orientation'),
+                    children: [
+                      for (final angle in angles)
+                        ListTile(title: Text('${angle.toInt()}°'), onTap: () => _setHeading(angle)),
+                    ],
+                  ),
+                  ExpansionTile(
+                    leading: const Icon(Icons.rotate_90_degrees_ccw),
+                    title: Text(_rotationSnapDegrees == null ? 'Always Snap Rotation · Off' : 'Always Snap Rotation · ${_rotationSnapDegrees!.toInt()}°'),
+                    children: [
+                      ListTile(
+                        leading: Icon(_rotationSnapDegrees == null ? Icons.radio_button_checked : Icons.radio_button_unchecked),
+                        title: const Text('Off'),
+                        onTap: () async { await _setRotationSnap(null); setSheetState(() {}); },
+                      ),
+                      for (final degrees in snapOptions)
+                        ListTile(
+                          leading: Icon(_rotationSnapDegrees == degrees ? Icons.radio_button_checked : Icons.radio_button_unchecked),
+                          title: Text('${degrees.toInt()}° increments'),
+                          onTap: () async { await _setRotationSnap(degrees); setSheetState(() {}); },
+                        ),
+                    ],
+                  ),
+                ],
               ),
-              menuChildren: underlayItems,
-              child: const Text('Underlays'),
-            ),
-          ],
-          child: const Text('Board'),
-        ),
-        SubmenuButton(
-          submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
-          menuChildren: [
-            MenuItemButton(
-              closeOnActivate: false,
-              onPressed: _controller.canUndo ? _controller.undo : null,
-              child: const Text('Undo'),
-            ),
-            MenuItemButton(
-              closeOnActivate: false,
-              onPressed: _controller.canRedo ? _controller.redo : null,
-              child: const Text('Redo'),
-            ),
-            SubmenuButton(
-              submenuIcon: const WidgetStatePropertyAll<Widget?>(
-                SizedBox.shrink(),
+              ExpansionTile(
+                initiallyExpanded: true,
+                leading: const Icon(Icons.toys_outlined),
+                title: const Text('Toys'),
+                children: [
+                  for (final toy in _ToyKind.values)
+                    ListTile(
+                      leading: Icon(toy.icon),
+                      title: Text(toy.label),
+                      trailing: Icon((_toyVisible[toy] ?? toy.defaultVisible) ? Icons.check_box : Icons.check_box_outline_blank),
+                      onTap: () async {
+                        await _toggleToyVisibility(toy);
+                        setSheetState(() {});
+                      },
+                    ),
+                ],
               ),
-              menuChildren: rotationItems,
-              child: const Text('Rotation'),
-            ),
-          ],
-          child: const Text('Edit'),
-        ),
-        SubmenuButton(
-          submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
-          menuChildren: toyItems,
-          child: const Text('Toys'),
-        ),
-        SubmenuButton(
-          submenuIcon: const WidgetStatePropertyAll<Widget?>(SizedBox.shrink()),
-          menuChildren: [
-            MenuItemButton(
-              onPressed: _showCalibrationCheck,
-              child: const Text('Size'),
-            ),
-            MenuItemButton(
-              onPressed: _showBrightnessDialog,
-              child: const Text('Brightness'),
-            ),
-            MenuItemButton(
-              onPressed: _showOrientationLockInfo,
-              child: const Text('Orientation Lock'),
-            ),
-            if (kIsWeb)
-              MenuItemButton(
-                onPressed: _showWebInstallHelp,
-                child: const Text('Full-screen'),
+              ExpansionTile(
+                leading: const Icon(Icons.display_settings),
+                title: const Text('Display'),
+                children: [
+                  ListTile(leading: const Icon(Icons.straighten), title: const Text('Size'), onTap: _showCalibrationCheck),
+                  ListTile(leading: const Icon(Icons.brightness_6_outlined), title: const Text('Brightness'), onTap: _showBrightnessDialog),
+                  ListTile(leading: const Icon(Icons.screen_lock_rotation), title: const Text('Orientation Lock'), onTap: _showOrientationLockInfo),
+                  if (kIsWeb) ListTile(leading: const Icon(Icons.fullscreen), title: const Text('Full-screen'), onTap: _showWebInstallHelp),
+                ],
               ),
-          ],
-          child: const Text('Display'),
-        ),
-        MenuItemButton(
-          onPressed: () => setState(() => _instructionsVisible = true),
-          child: const Text('Instructions'),
-        ),
-      ],
-      builder: (context, menuController, child) => IconButton(
-        tooltip: 'Menu',
-        onPressed: () async {
-          if (menuController.isOpen) {
-            menuController.close();
-            return;
-          }
-          await _ensureMotionPermission();
-          if (mounted) menuController.open();
-        },
-        icon: SizedBox(
-          width: 36,
-          height: 36,
-          child: CustomPaint(
-            painter: _MenuCirclePainter(snapDegrees: _rotationSnapDegrees),
+              ListTile(
+                leading: const Icon(Icons.help_outline),
+                title: const Text('Instructions'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  setState(() => _instructionsVisible = true);
+                },
+              ),
+            ],
           ),
         ),
       ),
@@ -2059,41 +2417,27 @@ class _BoardScreenNextState extends State<BoardScreenNext>
         ),
       );
     }
-
-    if (toy == _ToyKind.lightLottery) {
-      return IconButton(
-        tooltip: toy.label,
-        visualDensity: VisualDensity.compact,
-        onPressed: _randomizerRunning ? null : () => _activateToy(toy),
-        icon: Text(
-          '✦',
-          style: TextStyle(
-            color: active ? Colors.white : Colors.white70,
-            fontSize: 23,
-            fontWeight: FontWeight.w300,
-          ),
-        ),
-      );
-    }
-
-    final lightEffect =
-        toy == _ToyKind.lightRace || toy == _ToyKind.memorySequence;
     return IconButton(
       tooltip: toy.label,
       visualDensity: VisualDensity.compact,
-      onPressed: lightEffect && _randomizerRunning
+      onPressed: _randomizerRunning && {
+        _ToyKind.lightLottery,
+        _ToyKind.hotPotato,
+        _ToyKind.comet,
+        _ToyKind.infection,
+        _ToyKind.rouletteField,
+        _ToyKind.falseEndings,
+      }.contains(toy)
           ? null
           : () => _activateToy(toy),
-      icon: Icon(
-        toy.icon,
-        size: 21,
-        color: active ? Colors.white : Colors.white70,
-      ),
+      icon: toy == _ToyKind.lightLottery
+          ? Text('✦', style: TextStyle(color: active ? Colors.white : Colors.white70, fontSize: 23, fontWeight: FontWeight.w300))
+          : Icon(toy.icon, size: 21, color: active ? Colors.white : Colors.white70),
     );
   }
 
   Widget _toyControls() => ConstrainedBox(
-    constraints: const BoxConstraints(maxWidth: 220),
+    constraints: const BoxConstraints(maxWidth: 260),
     child: Wrap(
       alignment: WrapAlignment.end,
       runAlignment: WrapAlignment.end,
@@ -2192,16 +2536,23 @@ class _BoardScreenNextState extends State<BoardScreenNext>
                 logicalPixelsPerMm: widget.logicalPixelsPerMm,
                 geometry: _controller.geometry,
                 elements: _controller.state.elements,
-                raceProgress: _raceProgress,
-                territoryMode: _territoryMode,
                 ghostTrails: _ghostTrails,
                 ghostTrailsVisible: _ghostTrailActive,
                 eventZoneCenter: _eventZoneCenter,
                 eventZoneRadiusMm: _eventZoneRadiusMm,
-                targets: _toyTargets,
-                overlayMode: _overlayMode,
+                eventZoneProgress: _eventZoneProgress,
+                eventZoneDismiss: _eventZoneDismiss,
                 turnTimerProgress: _turnTimerProgress,
-                scenarioLabel: _scenarioLabel,
+                radarAngleDegrees: _activeToys.contains(_ToyKind.radar) ? _radarAngleDegrees : null,
+                redSweepY: _activeToys.contains(_ToyKind.redSweep) ? _redSweepY : null,
+                dieValue: _activeToys.contains(_ToyKind.wireDie) ? _dieValue : null,
+                dieRollPhase: _dieRollPhase,
+                projectiles: _projectiles,
+                impacts: _impacts,
+                sideGunsVisible: _activeToys.contains(_ToyKind.sideGuns),
+                cornerGunsVisible: _activeToys.contains(_ToyKind.cornerRicochet) || _projectiles.any((p) => p.ricochet),
+                constellation: _constellation,
+                rouletteAngleDegrees: _rouletteAngleDegrees,
               ),
               child: const SizedBox.expand(),
             ),
