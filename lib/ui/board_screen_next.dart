@@ -21,6 +21,29 @@ import '../domain/physical_point.dart';
 import '../platform/motion_permission.dart';
 import '../platform/web_orientation.dart';
 import 'board_painter.dart';
+import 'toy_overlay.dart';
+
+enum _ToyKind {
+  lightLottery('Light Lottery', Icons.auto_awesome, true),
+  entropy('Entropy Delete', Icons.hourglass_empty, true),
+  lightRace('Light Race', Icons.flag_outlined, false),
+  territory('Territory Zones', Icons.grid_view, false),
+  ghostPaths('Ghost Paths', Icons.timeline, false),
+  eventZone('Random Event Zone', Icons.adjust, false),
+  memorySequence('Memory Sequence', Icons.memory, false),
+  turnTimer('Turn Timer', Icons.timer_outlined, false),
+  augmentedOverlay('Augmented Overlay', Icons.filter_center_focus, false),
+  cooperativePuzzle('Co-op Mirror Puzzle', Icons.extension_outlined, false),
+  scenarioDeck('Scenario Deck', Icons.casino_outlined, false);
+
+  const _ToyKind(this.label, this.icon, this.defaultVisible);
+
+  final String label;
+  final IconData icon;
+  final bool defaultVisible;
+
+  String get preferenceKey => 'lighthouse.toy.$name.visible.v1';
+}
 
 class BoardScreenNext extends StatefulWidget {
   const BoardScreenNext({
@@ -87,11 +110,26 @@ class _BoardScreenNextState extends State<BoardScreenNext>
   double? _burstProgress;
   bool _randomizerRunning = false;
   bool _entropyEnabled = false;
-  bool _lightLotteryToyVisible = true;
-  bool _entropyToyVisible = true;
+  final Map<_ToyKind, bool> _toyVisible = {
+    for (final toy in _ToyKind.values) toy: toy.defaultVisible,
+  };
   Timer? _entropyTimer;
+  Timer? _eventZoneTimer;
+  Timer? _turnTimer;
   int _effectGeneration = 0;
   int _entropyGeneration = 0;
+  Map<String, double> _raceProgress = const {};
+  int _territoryMode = 0;
+  bool _ghostTrailActive = false;
+  final Map<String, List<PhysicalPoint>> _ghostTrails = {};
+  PhysicalPoint? _eventZoneCenter;
+  double? _eventZoneRadiusMm;
+  List<ToyTarget> _toyTargets = const [];
+  _ToyKind? _targetOwner;
+  int _overlayMode = 0;
+  double? _turnTimerProgress;
+  int _scenarioIndex = -1;
+  String? _scenarioLabel;
 
   StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
   Timer? _webMotionTimer;
@@ -193,6 +231,8 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     _webOrientationPollTimer?.cancel();
     _desktopScrollEndTimer?.cancel();
     _entropyTimer?.cancel();
+    _eventZoneTimer?.cancel();
+    _turnTimer?.cancel();
     _effectGeneration += 1;
     _entropyGeneration += 1;
     _accelerometerSubscription?.cancel();
@@ -254,8 +294,13 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     final granted = await requestWebMotionPermission();
     if (!mounted) return;
     if (granted) {
+      _faceUpZSign = null;
+      _faceUpCandidateSign = null;
+      _faceUpStableSamples = 0;
       _startWebMotionMonitoring();
-    } else if (force) {
+    } else {
+      _motionPermissionAttempted = false;
+      if (!force) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Motion access was not granted.')),
       );
@@ -317,10 +362,10 @@ class _BoardScreenNextState extends State<BoardScreenNext>
       _rotationSnapDegrees = snap != null && snap > 0 ? snap : null;
       _gridSnapEnabled =
           preferences.getBool('lighthouse.gridSnapEnabled.v1') ?? false;
-      _lightLotteryToyVisible =
-          preferences.getBool('lighthouse.toy.lightLottery.visible.v1') ?? true;
-      _entropyToyVisible =
-          preferences.getBool('lighthouse.toy.entropy.visible.v1') ?? true;
+      for (final toy in _ToyKind.values) {
+        _toyVisible[toy] =
+            preferences.getBool(toy.preferenceKey) ?? toy.defaultVisible;
+      }
     });
   }
 
@@ -343,25 +388,420 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     );
   }
 
-  Future<void> _toggleLightLotteryToyVisibility() async {
-    setState(() => _lightLotteryToyVisible = !_lightLotteryToyVisible);
+  Future<void> _toggleToyVisibility(_ToyKind toy) async {
+    final next = !(_toyVisible[toy] ?? toy.defaultVisible);
+    if (!next) _deactivateToy(toy);
+    setState(() => _toyVisible[toy] = next);
     final preferences = await SharedPreferences.getInstance();
-    await preferences.setBool(
-      'lighthouse.toy.lightLottery.visible.v1',
-      _lightLotteryToyVisible,
+    await preferences.setBool(toy.preferenceKey, next);
+  }
+
+  void _deactivateToy(_ToyKind toy) {
+    switch (toy) {
+      case _ToyKind.lightLottery:
+      case _ToyKind.lightRace:
+      case _ToyKind.memorySequence:
+        _effectGeneration += 1;
+        _randomizerRunning = false;
+        _effectOpacities = const {};
+        _raceProgress = const {};
+        _burstCenter = null;
+        _burstProgress = null;
+      case _ToyKind.entropy:
+        if (_entropyEnabled) _toggleEntropy();
+      case _ToyKind.territory:
+        _territoryMode = 0;
+      case _ToyKind.ghostPaths:
+        _ghostTrailActive = false;
+        _ghostTrails.clear();
+      case _ToyKind.eventZone:
+        _eventZoneTimer?.cancel();
+        _eventZoneCenter = null;
+        _eventZoneRadiusMm = null;
+      case _ToyKind.turnTimer:
+        _turnTimer?.cancel();
+        _turnTimerProgress = null;
+      case _ToyKind.augmentedOverlay:
+        _overlayMode = 0;
+      case _ToyKind.cooperativePuzzle:
+      case _ToyKind.scenarioDeck:
+        if (_targetOwner == toy) {
+          _toyTargets = const [];
+          _targetOwner = null;
+          _scenarioLabel = null;
+        }
+    }
+  }
+
+  void _activateToy(_ToyKind toy) {
+    switch (toy) {
+      case _ToyKind.lightLottery:
+        _runLightRandomizer();
+      case _ToyKind.entropy:
+        _toggleEntropy();
+      case _ToyKind.lightRace:
+        _runLightRace();
+      case _ToyKind.territory:
+        _cycleTerritoryZones();
+      case _ToyKind.ghostPaths:
+        _toggleGhostPaths();
+      case _ToyKind.eventZone:
+        _placeRandomEventZone();
+      case _ToyKind.memorySequence:
+        _runMemorySequence();
+      case _ToyKind.turnTimer:
+        _startTurnTimer();
+      case _ToyKind.augmentedOverlay:
+        _cycleAugmentedOverlay();
+      case _ToyKind.cooperativePuzzle:
+        _showCooperativeMirrorPuzzle();
+      case _ToyKind.scenarioDeck:
+        _nextScenario();
+    }
+  }
+
+  bool _toyIsActive(_ToyKind toy) => switch (toy) {
+    _ToyKind.lightLottery => _randomizerRunning && _raceProgress.isEmpty,
+    _ToyKind.entropy => _entropyEnabled,
+    _ToyKind.lightRace => _raceProgress.isNotEmpty,
+    _ToyKind.territory => _territoryMode > 0,
+    _ToyKind.ghostPaths => _ghostTrailActive,
+    _ToyKind.eventZone => _eventZoneCenter != null,
+    _ToyKind.memorySequence => _randomizerRunning && _raceProgress.isEmpty,
+    _ToyKind.turnTimer => _turnTimerProgress != null,
+    _ToyKind.augmentedOverlay => _overlayMode > 0,
+    _ToyKind.cooperativePuzzle => _targetOwner == _ToyKind.cooperativePuzzle,
+    _ToyKind.scenarioDeck => _targetOwner == _ToyKind.scenarioDeck,
+  };
+
+  ({double width, double height}) _physicalBoardSize() {
+    final size = _webBoardSize ?? MediaQuery.sizeOf(context);
+    final padding = _webBoardViewPadding ?? MediaQuery.viewPaddingOf(context);
+    return (
+      width: math.max(
+        1.0,
+        (size.width - padding.horizontal) / widget.logicalPixelsPerMm,
+      ),
+      height: math.max(
+        1.0,
+        (size.height - padding.vertical) / widget.logicalPixelsPerMm,
+      ),
     );
   }
 
-  Future<void> _toggleEntropyToyVisibility() async {
-    if (_entropyToyVisible && _entropyEnabled) {
-      _toggleEntropy();
-    }
-    setState(() => _entropyToyVisible = !_entropyToyVisible);
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setBool(
-      'lighthouse.toy.entropy.visible.v1',
-      _entropyToyVisible,
+  void _cycleTerritoryZones() {
+    setState(() => _territoryMode = _territoryMode % 3 + 1);
+  }
+
+  void _toggleGhostPaths() {
+    setState(() {
+      _ghostTrailActive = !_ghostTrailActive;
+      _ghostTrails.clear();
+      if (_ghostTrailActive) {
+        for (final element in _controller.state.elements) {
+          _ghostTrails[element.id] = [element.position];
+        }
+      }
+    });
+  }
+
+  void _placeRandomEventZone() {
+    final board = _physicalBoardSize();
+    final maximumRadius = math.max(
+      6.0,
+      math.min(board.width, board.height) * 0.24,
     );
+    final radius = math.min(maximumRadius, 12 + _random.nextDouble() * 18);
+    final xSpan = math.max(0.0, board.width - radius * 2);
+    final ySpan = math.max(0.0, board.height - radius * 2);
+    final center = PhysicalPoint(
+      radius + _random.nextDouble() * xSpan,
+      radius + _random.nextDouble() * ySpan,
+    );
+    _eventZoneTimer?.cancel();
+    setState(() {
+      _eventZoneCenter = center;
+      _eventZoneRadiusMm = radius;
+    });
+    _eventZoneTimer = Timer(const Duration(seconds: 12), () {
+      if (!mounted) return;
+      setState(() {
+        _eventZoneCenter = null;
+        _eventZoneRadiusMm = null;
+      });
+    });
+  }
+
+  void _cycleAugmentedOverlay() {
+    setState(() => _overlayMode = _overlayMode % 3 + 1);
+  }
+
+  void _startTurnTimer() {
+    _turnTimer?.cancel();
+    final endsAt = DateTime.now().add(const Duration(seconds: 30));
+    setState(() => _turnTimerProgress = 1);
+    _turnTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final remaining = endsAt.difference(DateTime.now()).inMilliseconds;
+      if (remaining <= 0) {
+        timer.cancel();
+        HapticFeedback.mediumImpact();
+        setState(() => _turnTimerProgress = 0);
+        Future<void>.delayed(const Duration(milliseconds: 650), () {
+          if (mounted && _turnTimerProgress == 0) {
+            setState(() => _turnTimerProgress = null);
+          }
+        });
+        return;
+      }
+      setState(() => _turnTimerProgress = remaining / 30000);
+    });
+  }
+
+  Future<void> _runLightRace() async {
+    if (_randomizerRunning || _controller.state.elements.isEmpty) return;
+    final generation = ++_effectGeneration;
+    final ids = _controller.state.elements
+        .map((element) => element.id)
+        .toList();
+    setState(() {
+      _randomizerRunning = true;
+      _raceProgress = {for (final id in ids) id: 0};
+      _effectOpacities = const {};
+      _burstCenter = null;
+      _burstProgress = null;
+    });
+
+    String? winnerId;
+    while (winnerId == null && mounted && generation == _effectGeneration) {
+      await Future<void>.delayed(const Duration(milliseconds: 110));
+      if (!mounted || generation != _effectGeneration) return;
+      final liveIds = _controller.state.elements
+          .map((element) => element.id)
+          .toList();
+      if (liveIds.isEmpty) break;
+      final id = liveIds[_random.nextInt(liveIds.length)];
+      final next = Map<String, double>.from(_raceProgress);
+      final progress = (next[id] ?? 0) + 0.045 + _random.nextDouble() * 0.085;
+      next[id] = progress.clamp(0, 1).toDouble();
+      if (progress >= 1) winnerId = id;
+      setState(() => _raceProgress = next);
+    }
+
+    final winner = winnerId == null
+        ? null
+        : _controller.state.elementById(winnerId);
+    if (winner != null && mounted && generation == _effectGeneration) {
+      setState(() {
+        _effectOpacities = {
+          for (final element in _controller.state.elements)
+            element.id: element.id == winner.id ? 1.0 : 0.12,
+        };
+        _burstCenter = winner.position;
+        _burstProgress = 0;
+      });
+      for (var frame = 0; frame <= 24; frame += 1) {
+        if (!mounted || generation != _effectGeneration) return;
+        setState(() => _burstProgress = frame / 24);
+        await Future<void>.delayed(const Duration(milliseconds: 24));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 850));
+    }
+    if (!mounted || generation != _effectGeneration) return;
+    setState(() {
+      _randomizerRunning = false;
+      _raceProgress = const {};
+      _effectOpacities = const {};
+      _burstCenter = null;
+      _burstProgress = null;
+    });
+  }
+
+  Future<void> _runMemorySequence() async {
+    if (_randomizerRunning || _controller.state.elements.isEmpty) return;
+    final generation = ++_effectGeneration;
+    final elements = _controller.state.elements;
+    final count = math.min(8, math.max(4, elements.length * 2)).toInt();
+    final sequence = <String>[];
+    String? previous;
+    for (var i = 0; i < count; i += 1) {
+      final choices = elements.length == 1 || previous == null
+          ? elements
+          : elements.where((element) => element.id != previous).toList();
+      final chosen = choices[_random.nextInt(choices.length)].id;
+      sequence.add(chosen);
+      previous = chosen;
+    }
+    setState(() => _randomizerRunning = true);
+    for (final id in sequence) {
+      if (!mounted || generation != _effectGeneration) return;
+      final current = _controller.state.elements;
+      setState(() {
+        _effectOpacities = {
+          for (final element in current)
+            element.id: element.id == id ? 1.0 : 0.08,
+        };
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 430));
+      if (!mounted || generation != _effectGeneration) return;
+      setState(() {
+        _effectOpacities = {for (final element in current) element.id: 0.18};
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 190));
+    }
+    if (!mounted || generation != _effectGeneration) return;
+    setState(() {
+      _randomizerRunning = false;
+      _effectOpacities = const {};
+    });
+  }
+
+  void _showCooperativeMirrorPuzzle() {
+    final elements = _controller.state.elements;
+    if (elements.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Create a few footprints first.')),
+      );
+      return;
+    }
+    final board = _physicalBoardSize();
+    setState(() {
+      _toyTargets = [
+        for (final element in elements)
+          ToyTarget(
+            position: PhysicalPoint(
+              board.width - element.position.xMm,
+              element.position.yMm,
+            ),
+            size: element.size,
+            pose: element.pose,
+            headingDegrees: normalizeDegrees(180 - element.headingDegrees),
+          ),
+      ];
+      _targetOwner = _ToyKind.cooperativePuzzle;
+      _scenarioLabel = 'CO-OP MIRROR';
+    });
+  }
+
+  void _nextScenario() {
+    final board = _physicalBoardSize();
+    final width = board.width;
+    final height = board.height;
+    final margin = math.max(
+      8.0,
+      math.min(18.0, math.min(width, height) * 0.12),
+    );
+    final center = PhysicalPoint(width / 2, height / 2);
+    _scenarioIndex = (_scenarioIndex + 1) % 5;
+    late final List<ToyTarget> targets;
+    late final String label;
+
+    switch (_scenarioIndex) {
+      case 0:
+        label = 'SCENARIO · FOUR CORNERS';
+        targets = [
+          ToyTarget(
+            position: PhysicalPoint(margin, margin),
+            size: PyramidSize.small,
+            pose: PyramidPose.upright,
+          ),
+          ToyTarget(
+            position: PhysicalPoint(width - margin, margin),
+            size: PyramidSize.small,
+            pose: PyramidPose.upright,
+          ),
+          ToyTarget(
+            position: PhysicalPoint(margin, height - margin),
+            size: PyramidSize.small,
+            pose: PyramidPose.upright,
+          ),
+          ToyTarget(
+            position: PhysicalPoint(width - margin, height - margin),
+            size: PyramidSize.small,
+            pose: PyramidPose.upright,
+          ),
+        ];
+      case 1:
+        label = 'SCENARIO · DIAGONAL';
+        targets = [
+          ToyTarget(
+            position: PhysicalPoint(width * 0.28, height * 0.28),
+            size: PyramidSize.small,
+            pose: PyramidPose.flat,
+            headingDegrees: 45,
+          ),
+          ToyTarget(
+            position: center,
+            size: PyramidSize.medium,
+            pose: PyramidPose.flat,
+            headingDegrees: 45,
+          ),
+          ToyTarget(
+            position: PhysicalPoint(width * 0.72, height * 0.72),
+            size: PyramidSize.large,
+            pose: PyramidPose.flat,
+            headingDegrees: 45,
+          ),
+        ];
+      case 2:
+        label = 'SCENARIO · ORBIT';
+        final radius = math.min(width, height) * 0.25;
+        targets = [
+          for (var i = 0; i < 6; i += 1)
+            ToyTarget(
+              position: PhysicalPoint(
+                center.xMm + math.cos(i * math.pi / 3) * radius,
+                center.yMm + math.sin(i * math.pi / 3) * radius,
+              ),
+              size: PyramidSize.small,
+              pose: PyramidPose.upright,
+              headingDegrees: i * 60,
+            ),
+        ];
+      case 3:
+        label = 'SCENARIO · NEST';
+        targets = [
+          ToyTarget(
+            position: center,
+            size: PyramidSize.large,
+            pose: PyramidPose.upright,
+          ),
+          ToyTarget(
+            position: center,
+            size: PyramidSize.medium,
+            pose: PyramidPose.upright,
+          ),
+          ToyTarget(
+            position: center,
+            size: PyramidSize.small,
+            pose: PyramidPose.upright,
+          ),
+        ];
+      default:
+        label = 'SCENARIO · PINWHEEL';
+        final radius = math.min(width, height) * 0.18;
+        targets = [
+          for (var i = 0; i < 4; i += 1)
+            ToyTarget(
+              position: PhysicalPoint(
+                center.xMm + math.cos(i * math.pi / 2) * radius,
+                center.yMm + math.sin(i * math.pi / 2) * radius,
+              ),
+              size: PyramidSize.medium,
+              pose: PyramidPose.flat,
+              headingDegrees: i * 90 + 45,
+            ),
+        ];
+    }
+
+    setState(() {
+      _toyTargets = targets;
+      _targetOwner = _ToyKind.scenarioDeck;
+      _scenarioLabel = label;
+    });
   }
 
   PhysicalPoint? _nearestUnderlaySnapPoint() {
@@ -527,6 +967,22 @@ class _BoardScreenNextState extends State<BoardScreenNext>
 
   void _refresh() {
     if (!mounted) return;
+    if (_ghostTrailActive) {
+      final liveIds = _controller.state.elements
+          .map((element) => element.id)
+          .toSet();
+      _ghostTrails.removeWhere((id, _) => !liveIds.contains(id));
+      for (final element in _controller.state.elements) {
+        final trail = _ghostTrails.putIfAbsent(
+          element.id,
+          () => <PhysicalPoint>[],
+        );
+        if (trail.isEmpty || trail.last.distanceTo(element.position) >= 1.2) {
+          trail.add(element.position);
+          if (trail.length > 42) trail.removeAt(0);
+        }
+      }
+    }
     setState(() {
       if (_selectedId != null &&
           _controller.state.elementById(_selectedId!) == null) {
@@ -1297,18 +1753,13 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     ];
 
     final toyItems = <Widget>[
-      MenuItemButton(
-        closeOnActivate: false,
-        leadingIcon: _checkmark(_lightLotteryToyVisible),
-        onPressed: _toggleLightLotteryToyVisibility,
-        child: const Text('Light Lottery'),
-      ),
-      MenuItemButton(
-        closeOnActivate: false,
-        leadingIcon: _checkmark(_entropyToyVisible),
-        onPressed: _toggleEntropyToyVisibility,
-        child: const Text('Entropy Delete'),
-      ),
+      for (final toy in _ToyKind.values)
+        MenuItemButton(
+          closeOnActivate: false,
+          leadingIcon: _checkmark(_toyVisible[toy] ?? toy.defaultVisible),
+          onPressed: () => _toggleToyVisibility(toy),
+          child: Text(toy.label),
+        ),
     ];
     final rotationItems = <Widget>[
       MenuItemButton(
@@ -1489,6 +1940,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
               'Entropy',
               'Enable in Menu > Toys, then toggle the deletion control',
             ),
+            ('More toys', 'Menu > Toys controls which toy icons appear'),
           ]
         : <(String, String)>[
             ('Create / resize / delete', 'Double-tap'),
@@ -1509,6 +1961,7 @@ class _BoardScreenNextState extends State<BoardScreenNext>
               'Entropy',
               'Enable in Menu > Toys, then toggle the deletion control',
             ),
+            ('More toys', 'Menu > Toys controls which toy icons appear'),
           ];
 
     return SafeArea(
@@ -1583,43 +2036,74 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     );
   }
 
-  Widget _toyControls() => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      if (_lightLotteryToyVisible)
-        IconButton(
-          tooltip: 'Light lottery',
-          onPressed: _randomizerRunning ? null : _runLightRandomizer,
-          icon: Text(
-            '✦',
-            style: TextStyle(
-              color: _randomizerRunning ? Colors.white30 : Colors.white70,
-              fontSize: 23,
-              fontWeight: FontWeight.w300,
-            ),
-          ),
-        ),
-      if (_entropyToyVisible)
-        Semantics(
-          button: true,
-          toggled: _entropyEnabled,
-          label: 'Delete one random footprint every 30 seconds',
-          child: Tooltip(
-            message: 'Entropy · delete one random footprint every 30 seconds',
-            child: GestureDetector(
-              onTap: _toggleEntropy,
-              behavior: HitTestBehavior.opaque,
-              child: SizedBox(
-                width: 40,
-                height: 40,
-                child: CustomPaint(
-                  painter: _EntropyControlPainter(enabled: _entropyEnabled),
-                ),
+  Widget _toyControl(_ToyKind toy) {
+    final active = _toyIsActive(toy);
+    if (toy == _ToyKind.entropy) {
+      return Semantics(
+        button: true,
+        toggled: _entropyEnabled,
+        label: 'Delete one random footprint every 30 seconds',
+        child: Tooltip(
+          message: 'Entropy · delete one random footprint every 30 seconds',
+          child: GestureDetector(
+            onTap: _toggleEntropy,
+            behavior: HitTestBehavior.opaque,
+            child: SizedBox(
+              width: 40,
+              height: 40,
+              child: CustomPaint(
+                painter: _EntropyControlPainter(enabled: _entropyEnabled),
               ),
             ),
           ),
         ),
-    ],
+      );
+    }
+
+    if (toy == _ToyKind.lightLottery) {
+      return IconButton(
+        tooltip: toy.label,
+        visualDensity: VisualDensity.compact,
+        onPressed: _randomizerRunning ? null : () => _activateToy(toy),
+        icon: Text(
+          '✦',
+          style: TextStyle(
+            color: active ? Colors.white : Colors.white70,
+            fontSize: 23,
+            fontWeight: FontWeight.w300,
+          ),
+        ),
+      );
+    }
+
+    final lightEffect =
+        toy == _ToyKind.lightRace || toy == _ToyKind.memorySequence;
+    return IconButton(
+      tooltip: toy.label,
+      visualDensity: VisualDensity.compact,
+      onPressed: lightEffect && _randomizerRunning
+          ? null
+          : () => _activateToy(toy),
+      icon: Icon(
+        toy.icon,
+        size: 21,
+        color: active ? Colors.white : Colors.white70,
+      ),
+    );
+  }
+
+  Widget _toyControls() => ConstrainedBox(
+    constraints: const BoxConstraints(maxWidth: 220),
+    child: Wrap(
+      alignment: WrapAlignment.end,
+      runAlignment: WrapAlignment.end,
+      spacing: 0,
+      runSpacing: 0,
+      children: [
+        for (final toy in _ToyKind.values)
+          if (_toyVisible[toy] ?? toy.defaultVisible) _toyControl(toy),
+      ],
+    ),
   );
   Widget _credits() => GestureDetector(
     behavior: HitTestBehavior.opaque,
@@ -1697,6 +2181,29 @@ class _BoardScreenNextState extends State<BoardScreenNext>
                 ),
                 child: const SizedBox.expand(),
               ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: safePadding,
+          child: IgnorePointer(
+            child: CustomPaint(
+              painter: ToyOverlayPainter(
+                logicalPixelsPerMm: widget.logicalPixelsPerMm,
+                geometry: _controller.geometry,
+                elements: _controller.state.elements,
+                raceProgress: _raceProgress,
+                territoryMode: _territoryMode,
+                ghostTrails: _ghostTrails,
+                ghostTrailsVisible: _ghostTrailActive,
+                eventZoneCenter: _eventZoneCenter,
+                eventZoneRadiusMm: _eventZoneRadiusMm,
+                targets: _toyTargets,
+                overlayMode: _overlayMode,
+                turnTimerProgress: _turnTimerProgress,
+                scenarioLabel: _scenarioLabel,
+              ),
+              child: const SizedBox.expand(),
             ),
           ),
         ),

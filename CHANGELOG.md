@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Expanded Toys into a full opt-in tray: Light Race, Territory Zones, Ghost Paths, Random Event Zone, Memory Sequence, Turn Timer, Augmented Overlay, Co-op Mirror Puzzle, and Scenario Deck now join Light Lottery and Entropy. Each toy has a persistent menu visibility toggle and its own board icon.
 - Reworked iPhone/iPad web orientation handling: Safari orientation changes are now observed directly, rechecked after viewport changes, and polled as a fallback; the frozen opening board counter-rotates so the physical play surface and touch hit testing stay fixed to the glass.
 - Reworked iPhone/iPad web face-down credits to use a direct browser Device Motion bridge with gravity data after permission is granted; the face-up Z-axis sign is learned from stable samples, credits appear only while face-down, and vanish when face-up.
 - Moved rotation-snap degree ticks flush against the inside edge of the hollow menu circle.
