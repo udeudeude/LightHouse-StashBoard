@@ -94,10 +94,8 @@ class ToyOverlayPainter extends CustomPainter {
   final List<PhysicalPoint> constellation;
   final double? rouletteAngleDegrees;
 
-  Offset _px(PhysicalPoint point) => Offset(
-    point.xMm * logicalPixelsPerMm,
-    point.yMm * logicalPixelsPerMm,
-  );
+  Offset _px(PhysicalPoint point) =>
+      Offset(point.xMm * logicalPixelsPerMm, point.yMm * logicalPixelsPerMm);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -189,7 +187,8 @@ class ToyOverlayPainter extends CustomPainter {
     final progress = turnTimerProgress;
     if (progress == null) return;
     final rect = Rect.fromLTWH(11, 11, size.width - 22, size.height - 22);
-    final path = Path()..addRRect(RRect.fromRectAndRadius(rect, const Radius.circular(8)));
+    final path = Path()
+      ..addRRect(RRect.fromRectAndRadius(rect, const Radius.circular(8)));
     final metric = path.computeMetrics().first;
     final length = metric.length * progress.clamp(0, 1).toDouble();
     final background = Paint()
@@ -210,7 +209,9 @@ class ToyOverlayPainter extends CustomPainter {
     if (degrees == null) return;
     final center = Offset(size.width / 2, size.height / 2);
     final radians = degrees * math.pi / 180;
-    final radius = math.sqrt(size.width * size.width + size.height * size.height);
+    final radius = math.sqrt(
+      size.width * size.width + size.height * size.height,
+    );
     final end = Offset(
       center.dx + math.cos(radians) * radius,
       center.dy + math.sin(radians) * radius,
@@ -227,7 +228,11 @@ class ToyOverlayPainter extends CustomPainter {
     final paint = Paint()
       ..color = const Color(0xFFFF3030).withValues(alpha: 0.82)
       ..strokeWidth = 1.5;
-    canvas.drawLine(Offset(0, size.height * y), Offset(size.width, size.height * y), paint);
+    canvas.drawLine(
+      Offset(0, size.height * y),
+      Offset(size.width, size.height * y),
+      paint,
+    );
   }
 
   void _paintWireDie(Canvas canvas, Size size) {
@@ -238,7 +243,9 @@ class ToyOverlayPainter extends CustomPainter {
     final phase = dieRollPhase;
     final skew = math.sin(phase) * s * 0.22;
     final front = Rect.fromCenter(center: center, width: s, height: s);
-    final back = front.shift(Offset(s * 0.34 + skew, -s * 0.28 + math.cos(phase) * s * 0.08));
+    final back = front.shift(
+      Offset(s * 0.34 + skew, -s * 0.28 + math.cos(phase) * s * 0.08),
+    );
     final paint = Paint()
       ..color = Colors.white.withValues(alpha: 0.72)
       ..style = PaintingStyle.stroke
@@ -256,7 +263,11 @@ class ToyOverlayPainter extends CustomPainter {
     final tp = TextPainter(
       text: TextSpan(
         text: '$value',
-        style: TextStyle(color: Colors.white.withValues(alpha: 0.82), fontSize: s * 0.45, fontWeight: FontWeight.w300),
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.82),
+          fontSize: s * 0.45,
+          fontWeight: FontWeight.w300,
+        ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
@@ -266,15 +277,48 @@ class ToyOverlayPainter extends CustomPainter {
   void _paintGuns(Canvas canvas, Size size) {
     if (sideGunsVisible) {
       final paint = Paint()..color = Colors.white.withValues(alpha: 0.34);
-      canvas.drawRect(Rect.fromCenter(center: Offset(size.width / 2, 3), width: 10, height: 5), paint);
-      canvas.drawRect(Rect.fromCenter(center: Offset(size.width / 2, size.height - 3), width: 10, height: 5), paint);
-      canvas.drawRect(Rect.fromCenter(center: Offset(3, size.height / 2), width: 5, height: 10), paint);
-      canvas.drawRect(Rect.fromCenter(center: Offset(size.width - 3, size.height / 2), width: 5, height: 10), paint);
+      canvas.drawRect(
+        Rect.fromCenter(
+          center: Offset(size.width / 2, 3),
+          width: 10,
+          height: 5,
+        ),
+        paint,
+      );
+      canvas.drawRect(
+        Rect.fromCenter(
+          center: Offset(size.width / 2, size.height - 3),
+          width: 10,
+          height: 5,
+        ),
+        paint,
+      );
+      canvas.drawRect(
+        Rect.fromCenter(
+          center: Offset(3, size.height / 2),
+          width: 5,
+          height: 10,
+        ),
+        paint,
+      );
+      canvas.drawRect(
+        Rect.fromCenter(
+          center: Offset(size.width - 3, size.height / 2),
+          width: 5,
+          height: 10,
+        ),
+        paint,
+      );
     }
     if (cornerGunsVisible) {
       const d = 7.0;
       final paint = Paint()..color = Colors.white.withValues(alpha: 0.22);
-      for (final p in [const Offset(d, d), Offset(size.width - d, d), Offset(d, size.height - d), Offset(size.width - d, size.height - d)]) {
+      for (final p in [
+        const Offset(d, d),
+        Offset(size.width - d, d),
+        Offset(d, size.height - d),
+        Offset(size.width - d, size.height - d),
+      ]) {
         canvas.drawCircle(p, 3.2, paint);
       }
     }
@@ -285,7 +329,10 @@ class ToyOverlayPainter extends CustomPainter {
       canvas.drawCircle(
         _px(p.position),
         math.max(1.4, p.radiusMm * logicalPixelsPerMm),
-        Paint()..color = p.ricochet ? Colors.white.withValues(alpha: 0.72) : Colors.white.withValues(alpha: 0.88),
+        Paint()
+          ..color = p.ricochet
+              ? Colors.white.withValues(alpha: 0.72)
+              : Colors.white.withValues(alpha: 0.88),
       );
     }
   }
@@ -328,13 +375,18 @@ class ToyOverlayPainter extends CustomPainter {
     if (degrees == null) return;
     final center = Offset(size.width / 2, size.height / 2);
     final radians = degrees * math.pi / 180;
-    final radius = math.sqrt(size.width * size.width + size.height * size.height);
+    final radius = math.sqrt(
+      size.width * size.width + size.height * size.height,
+    );
     final paint = Paint()
       ..color = Colors.white.withValues(alpha: 0.68)
       ..strokeWidth = 1.3;
     canvas.drawLine(
       center,
-      Offset(center.dx + math.cos(radians) * radius, center.dy + math.sin(radians) * radius),
+      Offset(
+        center.dx + math.cos(radians) * radius,
+        center.dy + math.sin(radians) * radius,
+      ),
       paint,
     );
   }

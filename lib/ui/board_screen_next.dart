@@ -829,15 +829,17 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     }
 
     if (_activeToys.contains(_ToyKind.breathing)) {
-      _effectOpacities = {
-        for (final e in elements) e.id: _breathOpacity(e),
-      };
+      _effectOpacities = {for (final e in elements) e.id: _breathOpacity(e)};
       return;
     }
 
     if (_activeToys.contains(_ToyKind.nestCycle)) {
       final phase = ((_toyClock / 0.58).floor()) % 3;
-      final wanted = [PyramidSize.large, PyramidSize.medium, PyramidSize.small][phase];
+      final wanted = [
+        PyramidSize.large,
+        PyramidSize.medium,
+        PyramidSize.small,
+      ][phase];
       final nestedIds = <String>{};
       for (var i = 0; i < elements.length; i++) {
         for (var j = i + 1; j < elements.length; j++) {
@@ -849,7 +851,9 @@ class _BoardScreenNextState extends State<BoardScreenNext>
       }
       _effectOpacities = {
         for (final e in elements)
-          e.id: nestedIds.contains(e.id) ? (e.size == wanted ? 1.0 : 0.025) : 1.0,
+          e.id: nestedIds.contains(e.id)
+              ? (e.size == wanted ? 1.0 : 0.025)
+              : 1.0,
       };
       return;
     }
@@ -891,7 +895,11 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     return 0.035 + 0.965 * wave;
   }
 
-  double _radarOpacity(PhysicalPoint point, PhysicalPoint center, double angle) {
+  double _radarOpacity(
+    PhysicalPoint point,
+    PhysicalPoint center,
+    double angle,
+  ) {
     final dx = point.xMm - center.xMm;
     final dy = point.yMm - center.yMm;
     final elementAngle = normalizeDegrees(math.atan2(dy, dx) * 180 / math.pi);
@@ -926,7 +934,12 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     ];
 
     for (var projectile in _projectiles) {
-      var position = projectile.position + PhysicalPoint(projectile.velocity.xMm * dt, projectile.velocity.yMm * dt);
+      var position =
+          projectile.position +
+          PhysicalPoint(
+            projectile.velocity.xMm * dt,
+            projectile.velocity.yMm * dt,
+          );
       var velocity = projectile.velocity;
       var edgeHits = projectile.edgeHits;
       var escaping = projectile.escaping;
@@ -947,7 +960,8 @@ class _BoardScreenNextState extends State<BoardScreenNext>
               bounced = true;
             }
           }
-          if (!escaping && (position.yMm <= 0 || position.yMm >= board.height)) {
+          if (!escaping &&
+              (position.yMm <= 0 || position.yMm >= board.height)) {
             edgeHits += 1;
             if (edgeHits >= 4) {
               escaping = true;
@@ -961,10 +975,16 @@ class _BoardScreenNextState extends State<BoardScreenNext>
             }
           }
           if (!bounced && !escaping) {
-            final hit = _controller.hitTest(position, haloMm: projectile.radiusMm);
+            final hit = _controller.hitTest(
+              position,
+              haloMm: projectile.radiusMm,
+            );
             if (hit != null) {
               final normal = position - hit.position;
-              final length = math.max(0.001, normal.distanceTo(PhysicalPoint.zero));
+              final length = math.max(
+                0.001,
+                normal.distanceTo(PhysicalPoint.zero),
+              );
               final nx = normal.xMm / length;
               final ny = normal.yMm / length;
               final dot = velocity.xMm * nx + velocity.yMm * ny;
@@ -972,21 +992,26 @@ class _BoardScreenNextState extends State<BoardScreenNext>
                 velocity.xMm - 2 * dot * nx,
                 velocity.yMm - 2 * dot * ny,
               );
-              position = position + PhysicalPoint(velocity.xMm * 0.035, velocity.yMm * 0.035);
+              position =
+                  position +
+                  PhysicalPoint(velocity.xMm * 0.035, velocity.yMm * 0.035);
             }
           }
         }
-        final outside = position.xMm < -6 ||
+        final outside =
+            position.xMm < -6 ||
             position.xMm > board.width + 6 ||
             position.yMm < -6 ||
             position.yMm > board.height + 6;
         if (!outside) {
-          next.add(projectile.copyWith(
-            position: position,
-            velocity: velocity,
-            edgeHits: edgeHits,
-            escaping: escaping,
-          ));
+          next.add(
+            projectile.copyWith(
+              position: position,
+              velocity: velocity,
+              edgeHits: edgeHits,
+              escaping: escaping,
+            ),
+          );
         }
         continue;
       }
@@ -1003,7 +1028,8 @@ class _BoardScreenNextState extends State<BoardScreenNext>
         impacts.add(ToyImpact(position: position, lifeSeconds: 0.8));
         continue;
       }
-      final outside = position.xMm < -2 ||
+      final outside =
+          position.xMm < -2 ||
           position.xMm > board.width + 2 ||
           position.yMm < -2 ||
           position.yMm > board.height + 2;
@@ -1054,9 +1080,11 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     ordered.add(remaining.removeAt(_random.nextInt(remaining.length)));
     while (remaining.isNotEmpty) {
       final last = ordered.last;
-      remaining.sort((a, b) => last.position
-          .distanceTo(a.position)
-          .compareTo(last.position.distanceTo(b.position)));
+      remaining.sort(
+        (a, b) => last.position
+            .distanceTo(a.position)
+            .compareTo(last.position.distanceTo(b.position)),
+      );
       ordered.add(remaining.removeAt(0));
     }
     for (var i = 0; i < ordered.length + 4; i++) {
@@ -1087,7 +1115,9 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     final generation = ++_effectGeneration;
     _randomizerRunning = true;
     final infected = <String>{};
-    final first = _controller.state.elements[_random.nextInt(_controller.state.elements.length)];
+    final first = _controller
+        .state
+        .elements[_random.nextInt(_controller.state.elements.length)];
     infected.add(first.id);
     while (mounted && generation == _effectGeneration) {
       final elements = _controller.state.elements;
@@ -1095,7 +1125,9 @@ class _BoardScreenNextState extends State<BoardScreenNext>
       LightElement? best;
       var bestDistance = double.infinity;
       for (final source in elements.where((e) => infected.contains(e.id))) {
-        for (final candidate in elements.where((e) => !infected.contains(e.id))) {
+        for (final candidate in elements.where(
+          (e) => !infected.contains(e.id),
+        )) {
           final d = source.position.distanceTo(candidate.position);
           if (d < bestDistance) {
             bestDistance = d;
@@ -1138,19 +1170,27 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     _randomizerRunning = true;
     final board = _physicalBoardSize();
     final center = PhysicalPoint(board.width / 2, board.height / 2);
-    final target = _controller.state.elements[_random.nextInt(_controller.state.elements.length)];
-    final targetAngle = normalizeDegrees(math.atan2(
-          target.position.yMm - center.yMm,
-          target.position.xMm - center.xMm,
-        ) *
-        180 /
-        math.pi);
+    final target = _controller
+        .state
+        .elements[_random.nextInt(_controller.state.elements.length)];
+    final targetAngle = normalizeDegrees(
+      math.atan2(
+            target.position.yMm - center.yMm,
+            target.position.xMm - center.xMm,
+          ) *
+          180 /
+          math.pi,
+    );
     const frames = 72;
     for (var i = 0; i <= frames; i++) {
       if (!mounted || generation != _effectGeneration) return;
       final t = i / frames;
       final eased = 1 - math.pow(1 - t, 3).toDouble();
-      setState(() => _rouletteAngleDegrees = normalizeDegrees((1080 + targetAngle) * eased));
+      setState(
+        () => _rouletteAngleDegrees = normalizeDegrees(
+          (1080 + targetAngle) * eased,
+        ),
+      );
       await Future<void>.delayed(const Duration(milliseconds: 28));
     }
     setState(() {
@@ -1176,17 +1216,21 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     for (var i = 0; i < 18; i++) {
       if (!mounted || generation != _effectGeneration) return;
       final id = elements[_random.nextInt(elements.length)].id;
-      setState(() => _effectOpacities = {
-            for (final e in _controller.state.elements)
-              e.id: e.id == id ? 1.0 : 0.025,
-          });
+      setState(
+        () => _effectOpacities = {
+          for (final e in _controller.state.elements)
+            e.id: e.id == id ? 1.0 : 0.025,
+        },
+      );
       await Future<void>.delayed(Duration(milliseconds: 80 + i * 13));
     }
     if (!mounted || generation != _effectGeneration) return;
     final first = elements[_random.nextInt(elements.length)];
-    setState(() => _effectOpacities = {
-          for (final e in elements) e.id: e.id == first.id ? 1 : 0.02,
-        });
+    setState(
+      () => _effectOpacities = {
+        for (final e in elements) e.id: e.id == first.id ? 1 : 0.02,
+      },
+    );
     await Future<void>.delayed(const Duration(milliseconds: 700));
     if (!mounted || generation != _effectGeneration) return;
     setState(() => _effectOpacities = {for (final e in elements) e.id: 0.0});
@@ -2153,13 +2197,41 @@ class _BoardScreenNextState extends State<BoardScreenNext>
                 leading: const Icon(Icons.dashboard_outlined),
                 title: const Text('Board'),
                 children: [
-                  ListTile(leading: const Icon(Icons.note_add_outlined), title: const Text('New'), onTap: _newBoard),
-                  ListTile(leading: const Icon(Icons.folder_open), title: const Text('Open…'), onTap: _manageSavedBoards),
-                  ListTile(leading: const Icon(Icons.save_outlined), title: const Text('Save'), onTap: () => _saveBoard()),
-                  ListTile(leading: const Icon(Icons.copy), title: const Text('Save a Copy…'), onTap: () => _saveBoard(asCopy: true)),
-                  ListTile(leading: const Icon(Icons.drive_file_rename_outline), title: const Text('Rename…'), onTap: _renameBoard),
-                  ListTile(leading: const Icon(Icons.input), title: const Text('Import Board JSON…'), onTap: _importBoard),
-                  ListTile(leading: const Icon(Icons.content_copy), title: const Text('Copy Board JSON'), onTap: _exportBoard),
+                  ListTile(
+                    leading: const Icon(Icons.note_add_outlined),
+                    title: const Text('New'),
+                    onTap: _newBoard,
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.folder_open),
+                    title: const Text('Open…'),
+                    onTap: _manageSavedBoards,
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.save_outlined),
+                    title: const Text('Save'),
+                    onTap: () => _saveBoard(),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.copy),
+                    title: const Text('Save a Copy…'),
+                    onTap: () => _saveBoard(asCopy: true),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.drive_file_rename_outline),
+                    title: const Text('Rename…'),
+                    onTap: _renameBoard,
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.input),
+                    title: const Text('Import Board JSON…'),
+                    onTap: _importBoard,
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.content_copy),
+                    title: const Text('Copy Board JSON'),
+                    onTap: _exportBoard,
+                  ),
                   ExpansionTile(
                     leading: const Icon(Icons.grid_on),
                     title: const Text('Underlays'),
@@ -2175,7 +2247,11 @@ class _BoardScreenNextState extends State<BoardScreenNext>
                       ),
                       for (final underlay in BoardUnderlay.values)
                         ListTile(
-                          leading: Icon(_controller.state.underlay == underlay ? Icons.radio_button_checked : Icons.radio_button_unchecked),
+                          leading: Icon(
+                            _controller.state.underlay == underlay
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_unchecked,
+                          ),
                           title: Text(underlay.menuLabel),
                           onTap: () {
                             _selectUnderlay(underlay);
@@ -2190,32 +2266,71 @@ class _BoardScreenNextState extends State<BoardScreenNext>
                 leading: const Icon(Icons.edit_outlined),
                 title: const Text('Edit'),
                 children: [
-                  ListTile(leading: const Icon(Icons.undo), title: const Text('Undo'), enabled: _controller.canUndo, onTap: _controller.canUndo ? _controller.undo : null),
-                  ListTile(leading: const Icon(Icons.redo), title: const Text('Redo'), enabled: _controller.canRedo, onTap: _controller.canRedo ? _controller.redo : null),
-                  ListTile(leading: const Icon(Icons.rotate_left), title: const Text('Rotate Left 15°'), onTap: () => _rotateSelected(-15)),
-                  ListTile(leading: const Icon(Icons.rotate_right), title: const Text('Rotate Right 15°'), onTap: () => _rotateSelected(15)),
+                  ListTile(
+                    leading: const Icon(Icons.undo),
+                    title: const Text('Undo'),
+                    enabled: _controller.canUndo,
+                    onTap: _controller.canUndo ? _controller.undo : null,
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.redo),
+                    title: const Text('Redo'),
+                    enabled: _controller.canRedo,
+                    onTap: _controller.canRedo ? _controller.redo : null,
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.rotate_left),
+                    title: const Text('Rotate Left 15°'),
+                    onTap: () => _rotateSelected(-15),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.rotate_right),
+                    title: const Text('Rotate Right 15°'),
+                    onTap: () => _rotateSelected(15),
+                  ),
                   ExpansionTile(
                     leading: const Icon(Icons.explore_outlined),
                     title: const Text('Set Orientation'),
                     children: [
                       for (final angle in angles)
-                        ListTile(title: Text('${angle.toInt()}°'), onTap: () => _setHeading(angle)),
+                        ListTile(
+                          title: Text('${angle.toInt()}°'),
+                          onTap: () => _setHeading(angle),
+                        ),
                     ],
                   ),
                   ExpansionTile(
                     leading: const Icon(Icons.rotate_90_degrees_ccw),
-                    title: Text(_rotationSnapDegrees == null ? 'Always Snap Rotation · Off' : 'Always Snap Rotation · ${_rotationSnapDegrees!.toInt()}°'),
+                    title: Text(
+                      _rotationSnapDegrees == null
+                          ? 'Always Snap Rotation · Off'
+                          : 'Always Snap Rotation · ${_rotationSnapDegrees!.toInt()}°',
+                    ),
                     children: [
                       ListTile(
-                        leading: Icon(_rotationSnapDegrees == null ? Icons.radio_button_checked : Icons.radio_button_unchecked),
+                        leading: Icon(
+                          _rotationSnapDegrees == null
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_unchecked,
+                        ),
                         title: const Text('Off'),
-                        onTap: () async { await _setRotationSnap(null); setSheetState(() {}); },
+                        onTap: () async {
+                          await _setRotationSnap(null);
+                          setSheetState(() {});
+                        },
                       ),
                       for (final degrees in snapOptions)
                         ListTile(
-                          leading: Icon(_rotationSnapDegrees == degrees ? Icons.radio_button_checked : Icons.radio_button_unchecked),
+                          leading: Icon(
+                            _rotationSnapDegrees == degrees
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_unchecked,
+                          ),
                           title: Text('${degrees.toInt()}° increments'),
-                          onTap: () async { await _setRotationSnap(degrees); setSheetState(() {}); },
+                          onTap: () async {
+                            await _setRotationSnap(degrees);
+                            setSheetState(() {});
+                          },
                         ),
                     ],
                   ),
@@ -2230,7 +2345,11 @@ class _BoardScreenNextState extends State<BoardScreenNext>
                     ListTile(
                       leading: Icon(toy.icon),
                       title: Text(toy.label),
-                      trailing: Icon((_toyVisible[toy] ?? toy.defaultVisible) ? Icons.check_box : Icons.check_box_outline_blank),
+                      trailing: Icon(
+                        (_toyVisible[toy] ?? toy.defaultVisible)
+                            ? Icons.check_box
+                            : Icons.check_box_outline_blank,
+                      ),
                       onTap: () async {
                         await _toggleToyVisibility(toy);
                         setSheetState(() {});
@@ -2242,10 +2361,27 @@ class _BoardScreenNextState extends State<BoardScreenNext>
                 leading: const Icon(Icons.display_settings),
                 title: const Text('Display'),
                 children: [
-                  ListTile(leading: const Icon(Icons.straighten), title: const Text('Size'), onTap: _showCalibrationCheck),
-                  ListTile(leading: const Icon(Icons.brightness_6_outlined), title: const Text('Brightness'), onTap: _showBrightnessDialog),
-                  ListTile(leading: const Icon(Icons.screen_lock_rotation), title: const Text('Orientation Lock'), onTap: _showOrientationLockInfo),
-                  if (kIsWeb) ListTile(leading: const Icon(Icons.fullscreen), title: const Text('Full-screen'), onTap: _showWebInstallHelp),
+                  ListTile(
+                    leading: const Icon(Icons.straighten),
+                    title: const Text('Size'),
+                    onTap: _showCalibrationCheck,
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.brightness_6_outlined),
+                    title: const Text('Brightness'),
+                    onTap: _showBrightnessDialog,
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.screen_lock_rotation),
+                    title: const Text('Orientation Lock'),
+                    onTap: _showOrientationLockInfo,
+                  ),
+                  if (kIsWeb)
+                    ListTile(
+                      leading: const Icon(Icons.fullscreen),
+                      title: const Text('Full-screen'),
+                      onTap: _showWebInstallHelp,
+                    ),
                 ],
               ),
               ListTile(
@@ -2420,19 +2556,32 @@ class _BoardScreenNextState extends State<BoardScreenNext>
     return IconButton(
       tooltip: toy.label,
       visualDensity: VisualDensity.compact,
-      onPressed: _randomizerRunning && {
-        _ToyKind.lightLottery,
-        _ToyKind.hotPotato,
-        _ToyKind.comet,
-        _ToyKind.infection,
-        _ToyKind.rouletteField,
-        _ToyKind.falseEndings,
-      }.contains(toy)
+      onPressed:
+          _randomizerRunning &&
+              {
+                _ToyKind.lightLottery,
+                _ToyKind.hotPotato,
+                _ToyKind.comet,
+                _ToyKind.infection,
+                _ToyKind.rouletteField,
+                _ToyKind.falseEndings,
+              }.contains(toy)
           ? null
           : () => _activateToy(toy),
       icon: toy == _ToyKind.lightLottery
-          ? Text('✦', style: TextStyle(color: active ? Colors.white : Colors.white70, fontSize: 23, fontWeight: FontWeight.w300))
-          : Icon(toy.icon, size: 21, color: active ? Colors.white : Colors.white70),
+          ? Text(
+              '✦',
+              style: TextStyle(
+                color: active ? Colors.white : Colors.white70,
+                fontSize: 23,
+                fontWeight: FontWeight.w300,
+              ),
+            )
+          : Icon(
+              toy.icon,
+              size: 21,
+              color: active ? Colors.white : Colors.white70,
+            ),
     );
   }
 
@@ -2543,14 +2692,22 @@ class _BoardScreenNextState extends State<BoardScreenNext>
                 eventZoneProgress: _eventZoneProgress,
                 eventZoneDismiss: _eventZoneDismiss,
                 turnTimerProgress: _turnTimerProgress,
-                radarAngleDegrees: _activeToys.contains(_ToyKind.radar) ? _radarAngleDegrees : null,
-                redSweepY: _activeToys.contains(_ToyKind.redSweep) ? _redSweepY : null,
-                dieValue: _activeToys.contains(_ToyKind.wireDie) ? _dieValue : null,
+                radarAngleDegrees: _activeToys.contains(_ToyKind.radar)
+                    ? _radarAngleDegrees
+                    : null,
+                redSweepY: _activeToys.contains(_ToyKind.redSweep)
+                    ? _redSweepY
+                    : null,
+                dieValue: _activeToys.contains(_ToyKind.wireDie)
+                    ? _dieValue
+                    : null,
                 dieRollPhase: _dieRollPhase,
                 projectiles: _projectiles,
                 impacts: _impacts,
                 sideGunsVisible: _activeToys.contains(_ToyKind.sideGuns),
-                cornerGunsVisible: _activeToys.contains(_ToyKind.cornerRicochet) || _projectiles.any((p) => p.ricochet),
+                cornerGunsVisible:
+                    _activeToys.contains(_ToyKind.cornerRicochet) ||
+                    _projectiles.any((p) => p.ricochet),
                 constellation: _constellation,
                 rouletteAngleDegrees: _rouletteAngleDegrees,
               ),
